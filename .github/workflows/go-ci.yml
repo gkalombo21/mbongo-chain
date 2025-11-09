@@ -24,7 +24,7 @@ jobs:
 
     - name: Build Mbongo-Chain
       run: |
-        cd cmd/mbongo-chain
+        cd ${{ github.workspace }}/cmd/mbongo-chain
         go build -v .
       working-directory: ${{ github.workspace }}
 
