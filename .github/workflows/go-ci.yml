@@ -22,7 +22,7 @@ jobs:
         run: go mod tidy
 
       - name: Build Mbongo-Chain
-        run: go build ./cmd/mbongo-chain
+        run: go build cmd/mbongo-chain
 
       - name: Run tests
         run: go test ./... -v
