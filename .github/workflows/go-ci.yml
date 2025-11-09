@@ -22,7 +22,9 @@ jobs:
         run: go mod tidy
 
       - name: Build Mbongo-Chain
-        run: go build ./cmd/mbongo-chain
+        run: |
+          cd $GITHUB_WORKSPACE
+          go build ./cmd/...
 
       - name: Run tests
         run: go test ./... -v
