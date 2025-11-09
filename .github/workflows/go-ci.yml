@@ -22,10 +22,14 @@ jobs:
         run: go mod tidy
 
       - name: Build Mbongo-Chain
-        run: go build cmd/mbongo-chain
+        run: |
+          cd ${{ github.workspace }}/cmd/mbongo-chain
+          go mod tidy
+          go build -v .
 
       - name: Run tests
-        run: go test ./... -v
+        run: go test ./...
+        working-directory: ${{ github.workspace }}
 
       - name: Lint code
         uses: golangci/golangci-lint-action@v6
