@@ -1,0 +1,39 @@
+# 👥 Mbongo-Chain CODEOWNERS
+# This file defines the maintainers responsible for code review and approval.
+# GitHub will automatically request their review when changes occur in these areas.
+
+# -------------------------------------------
+# 👑 Core Maintainers (Project Leads)
+# -------------------------------------------
+*                       @gkalombo21
+
+# -------------------------------------------
+# 🧠 AI & Proof-of-Useful-Work Components
+# -------------------------------------------
+/internal/blockchain/   @gkalombo21 @dev-ai-lead
+/internal/ai/           @dev-ai-lead
+
+# -------------------------------------------
+# 💰 Financial & Bank Modules
+# -------------------------------------------
+/internal/bank/         @fintech-lead
+
+# -------------------------------------------
+# ⚙️ API & Integration
+# -------------------------------------------
+/internal/api/          @api-team
+/internal/utils/        @core-maintainers
+
+# -------------------------------------------
+# 🧩 Documentation
+# -------------------------------------------
+/README.md              @gkalombo21
+/ROADMAP.md             @gkalombo21
+/GOVERNANCE.md          @gkalombo21
+/ONBOARDING.md          @gkalombo21
+/CONTRIBUTING.md        @gkalombo21
+
+# -------------------------------------------
+# 🔒 Security & Licensing
+# -------------------------------------------
+/LICENSE                @gkalombo21

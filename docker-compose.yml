@@ -1,0 +1,17 @@
+version: '3.9'
+
+services:
+  mbongo-chain:
+    container_name: mbongo-chain
+    image: golang:1.21-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/mbongo-chain
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_ENV=development
+      - LOG_LEVEL=info
+    restart: unless-stopped
+
