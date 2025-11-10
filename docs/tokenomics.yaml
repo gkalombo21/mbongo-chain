@@ -1,0 +1,72 @@
+# Mbongo-Chain Tokenomics Configuration
+
+# Project identifier
+project: Mbongo-Chain
+
+# Core token definition and supply model
+token:
+  name: Mbongo Token
+  symbol: MBG
+
+  # Maximum mintable supply over the full emission horizon
+  total_supply: 1_000_000_000
+
+  # Duration for full inflation schedule
+  emission_duration_years: 120
+
+  # Target block time in minutes (affects cadence of rewards)
+  block_time_minutes: 5
+
+  # Genesis allocation percentages (must sum to 100%)
+  initial_distribution:
+    staking_rewards: 60%
+    ecosystem_fund: 20%
+    team_and_advisors: 10%
+    public_sale: 5%
+    foundation_reserve: 5%
+
+  # Long-term emission curve (Bitcoin-style halving every four years)
+  halving_policy:
+    enabled: true
+    halving_interval_years: 4
+    description: >
+      The block reward decreases by 50% every 4 years to simulate a long-term scarcity model similar to Bitcoin,
+      but stretched across 120 years to ensure sustainability.
+
+  # Consensus reward split across Proof of Stake and Proof of Useful Work
+  proof_system:
+    type: Hybrid (PoS + PoUW)
+    description: >
+      Mbongo-Chain uses a hybrid consensus combining Proof of Stake for validation and
+      Proof of Useful Work for GPU-based AI computations and scientific tasks.
+
+  # Incentive parameters for validators and useful-work contributors
+  rewards:
+    validators:
+      base_reward_per_block: dynamic  # Adjusted via monetary policy proposals
+      stake_requirement: 10_000 MBG
+    miners:
+      reward_basis: useful_compute_contribution
+      measurement_method: cryptographic_proof
+
+  # Governance configuration for protocol upgrades
+  governance:
+    voting_token: MBG
+    upgrade_policy:
+      - parameter_changes
+      - quantum_security_migration
+      - monetary_policy_updates
+
+  # Token burn logic to manage long-term inflation
+  burn_mechanism:
+    enabled: true
+    trigger: transaction_fees
+    rate: 0.5%
+    purpose: "Deflationary control and long-term token value stabilization"
+
+  # Alignment with post-quantum roadmap
+  quantum_resilience:
+    status: "Planned for migration"
+    estimated_migration_window: 2035-2040
+    strategy_reference: "See docs/quantum-strategy.md"
+

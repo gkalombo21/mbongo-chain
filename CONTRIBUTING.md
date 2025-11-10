@@ -1,72 +1,129 @@
-# Contributing to Mbongo-Chain
+# 🤝 Contributing to Mbongo-Chain
 
-Welcome to Mbongo-Chain! This guide outlines how to get started, collaborate effectively, and follow the project’s engineering standards.
+Mbongo-Chain fuses decentralized AI compute with digital banking rails to deliver a programmable, energy-efficient financial ecosystem. We welcome contributors who share our mission and can support code, documentation, AI/ML modules, research, security analysis, and community operations.
 
-## 1. Development Setup
+This guide codifies the standards we expect for a production-grade blockchain network. Please read it fully before submitting work.
 
-1. Install **Go 1.21+** (`go version`).
-2. Fork the repository, then clone your fork:
+## 1️⃣ Introduction
+
+- **Mission**: Deploy a hybrid Proof of Stake + Proof of Useful Work network where validators secure the chain and GPU operators earn MBG for real AI workloads.
+- **Contribution Streams**:
+  - Core protocol engineering (consensus, staking, networking, cryptography under `internal/`).
+  - AI compute schedulers, proofs of useful work, and runtime orchestration.
+  - Wallets, SDKs, APIs, and application tooling (`app/`).
+  - Documentation, governance proposals, tokenomics studies, and security research.
+  - DevOps, CI/CD automation, observability, and blockchain infrastructure.
+- **Collaboration Principles**: Transparency, reproducibility, respectful debate, and a security-first mindset.
+
+## 2️⃣ Development Setup
+
+1. **Prerequisites**
+   - Go 1.21+ (`go version`)
+   - Git (latest stable release)
+   - Podman (preferred) or Docker
+   - Optional: Cursor or VS Code with Go tooling
+2. **Clone the Repository**
    ```bash
    git clone https://github.com/<your-username>/mbongo-chain.git
    cd mbongo-chain
+   git remote add upstream https://github.com/gkalombo21/mbongo-chain.git
    ```
-3. Synchronise dependencies and run the project once to confirm everything works:
+3. **Bootstrap Dependencies**
    ```bash
    go mod tidy
    go run ./cmd/mbongo-chain
    ```
-4. Prefer **Cursor AI** (recommended) or **VS Code** as your IDE and read `docs/architecture/MBONGO_SYSTEM_OVERVIEW.md` plus `docs/ai/AI_JOB_EXECUTION_FLOW.md` for project context.
+4. **Context Reading**
+   - `docs/architecture/MBONGO_SYSTEM_OVERVIEW.md`
+   - `docs/ai/AI_JOB_EXECUTION_FLOW.md`
+   - `docs/quantum-strategy.md`
+   - `docs/tokenomics.yaml`
 
-## 2. Branching & Workflow
+## 3️⃣ Branching & Workflow
 
-1. Update your fork from upstream and create a feature branch:
+1. Sync with upstream before coding:
    ```bash
-   git checkout -b feature/<feature-name>
+   git fetch upstream
+   git checkout main
+   git pull upstream main
    ```
-2. Make focused changes. Keep commits atomic and descriptive.
-3. Format code and run the full test suite before committing:
+2. Create a focused branch:
    ```bash
-   go fmt ./...
-   go test ./...
+   git checkout -b feature/<scope>
    ```
-4. Commit with a clear message (English, imperative mood):
+3. Keep commits atomic using imperative tense and issue references:
    ```bash
-   git commit -m "Add feature <name>"
+   git commit -m "Implement PoUW reward accounting"
    ```
-5. Push your branch and open a Pull Request:
+4. Rebase on `upstream/main` before opening a PR:
    ```bash
-   git push origin feature/<feature-name>
+   git fetch upstream
+   git rebase upstream/main
+   ```
+5. Push and open a pull request once ready:
+   ```bash
+   git push origin feature/<scope>
    ```
 
-## 3. Coding Guidelines
+## 4️⃣ Code Quality Standards
 
-- Use English for all identifiers, comments, documentation, and commit messages.
-- Keep functions small and modular (target < 50 lines) with meaningful names.
-- Avoid global variables; prefer dependency injection.
-- Document every exported type or function with a concise Go comment.
-- Add unit tests alongside new modules and follow table-driven patterns when possible.
-- Do not introduce new dependencies without approval from the core maintainers.
+- **Language & Style**: `gofmt` is mandatory; respect idiomatic Go practices and follow `golangci-lint` recommendations.
+- **Modularity**: Keep functions under ~50 lines; prefer interfaces and dependency injection; avoid global state.
+- **Documentation**: Comment every exported package, struct, and function using GoDoc conventions.
+- **Concurrency**: Guard shared resources explicitly; prefer channels or scoped mutexes; document locking assumptions.
+- **Dependencies**: Justify new modules in PRs; update `go.mod` via `go get` plus `go mod tidy`.
+- **Observability**: Reuse logging/metrics helpers in `internal/utils`; avoid ad-hoc logging formats.
 
-## 4. Pull Request Rules
+## 5️⃣ Testing & Verification
 
-- One PR should represent one logical change.
-- Provide a clear description, referencing related GitHub issues when applicable.
-- Ensure `go fmt ./...` and `go test ./...` pass before submission.
-- Highlight any AI-assisted changes in the PR description.
+- Unit tests are required for new logic; adopt table-driven patterns and cover failure cases.
+- Integration tests live under `internal/<domain>/tests` with deterministic fixtures.
+- Run baseline checks before commit:
+  ```bash
+  go fmt ./...
+  go test ./...
+  ```
+- Document manual validation steps or scripts in the PR when automation is not feasible.
+- Include benchmarks or profiling output for performance-sensitive changes.
 
-## 5. Core Team Workflow
+## 6️⃣ Documentation & Research Contributions
 
-- Core maintainers review and approve all PRs.
-- Changes touching critical areas (`internal/ai`, `internal/blockchain`) require **two approvals**.
-- Feature requests or substantial design changes should be proposed via GitHub Issues before implementation.
+- Update relevant guides (`README.md`, `docs/`, `ARCHITECTURE.md`, `TOKENOMICS.md`) alongside code.
+- Place long-form analyses inside the appropriate `docs/` subdirectory and cross-reference existing strategy papers.
+- Governance or monetary policy updates must align with `GOVERNANCE.md` and `docs/tokenomics.yaml`.
+- Cite external research, standards (e.g., NIST PQC), or industry whitepapers when influencing design decisions.
 
-## 6. Community Conduct & Security
+## 7️⃣ Pull Request Checklist
 
-- Follow the behaviour guidelines in `CODE_OF_CONDUCT.md`.
-- Never commit secrets. Use environment variables or secret managers.
-- Report vulnerabilities responsibly to `security@mbongo-chain.org`.
+Before requesting review confirm:
+- [ ] Branch rebased on `upstream/main`
+- [ ] `go fmt ./...` and `go test ./...` succeed locally
+- [ ] CI pipeline passes or failing checks are justified
+- [ ] PR description covers context, design decisions, and testing evidence
+- [ ] Screenshots/logs for user-facing or operational changes included
+- [ ] AI-assisted tooling disclosed in the PR summary
+
+## 8️⃣ Review & Governance Expectations
+
+- Core maintainers aim to review within three business days.
+- Changes to `internal/ai`, `internal/blockchain`, consensus, or cryptography require **two approvals** plus a security note.
+- Major architectural shifts begin as GitHub Issues or Mbongo Improvement Proposals (MIPs) for community deliberation.
+- Disagreements are resolved via technical merit, performance data, and roadmap alignment.
+
+## 9️⃣ Security & Responsible Disclosure
+
+- Never commit secrets, private keys, or production configuration data.
+- Use `.env.example` patterns and document secrets via secure deployment guides.
+- Report vulnerabilities privately to `security@mbongo-chain.org` with reproduction steps and impact assessment.
+- Expect coordinated disclosure timelines for high-severity findings.
+
+## 🔟 Community Conduct
+
+- Adhere to `CODE_OF_CONDUCT.md` across all community spaces.
+- Encourage inclusive, respectful dialogue; no harassment, discrimination, or spam.
+- Share learnings via documentation, community calls, or Discord to uplift builders globally.
 
 ---
 
-Together we’re building Mbongo-Chain—the global bridge between decentralized AI and finance. Thank you for contributing! 🌍🚀
+Mbongo-Chain thrives on open collaboration between AI researchers, financial engineers, and builders worldwide. Thank you for helping us deliver trustworthy decentralized AI banking. 🌍🚀
 

@@ -45,6 +45,7 @@ go run ./cmd/mbongo-chain
 - Follow idiomatic Go style conventions.
 - Use feature branches (e.g. `feature/ai-networking`).
 - Submit pull requests for review.
+- Need to monitor CI après vos pushes ? Consultez `docs/agents/github-actions-agent.md`.
 
 ---
 
