@@ -1,0 +1,18 @@
+# 🤖 Mbongo-Bot Configuration Workflow
+
+name: Setup Mbongo-Bot Identity
+
+on:
+  workflow_call:
+
+jobs:
+  setup-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure Git Identity for Mbongo-Bot
+        run: |
+          git config --global user.name "mbongo-bot"
+          git config --global user.email "bot@mbongo-chain.io"
+
+      - name: Verify bot identity
+        run: git config --list | grep user

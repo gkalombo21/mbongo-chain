@@ -1,13 +1,25 @@
 # 💰 Mbongo-Chain Tokenomics — MBG Token
 
+## 🔍 Investor Snapshot
+- **Token Name:** MBG (Mbongo)
+- **Maximum Supply:** 1,000,000,000 MBG (hard cap)
+- **Consensus:** Hybrid Proof of Stake (PoS) + Proof of Useful Work (PoUW)
+- **Block Time:** 5 minutes (average)
+- **Initial Block Reward:** 50 MBG
+- **Halving:** Every 5 years, emission extends ~60 years
+- **Fee Policy:** 50% of fees are burned, 50% distributed to validators
+- **DAO Governance:** Staking-weighted voting, deflationary policy inspired by Ethereum’s EIP-1559
+
+---
+
 ## 1. Overview
 
-The **MBG Token (Mbongo Governance Token)** powers the Mbongo-Chain ecosystem.  
-It is designed for:
+The **MBG Token** is the lifeblood of the Mbongo-Chain ecosystem. It aligns incentives for validators, GPU compute providers, and the broader community by rewarding secure validation and real AI computation.
 
-- **Network security** (staking and validation).  
-- **AI computation rewards** (Proof of Useful Work).  
-- **Governance participation** (DAO voting).  
+MBG enables:
+- **Network security** through staking and validator participation.
+- **AI computation rewards** for useful work instead of wasteful hashing.
+- **Governance** via the Mbongo DAO.
 - **Economic alignment** between AI miners, validators, and developers.
 
 ---
@@ -16,103 +28,113 @@ It is designed for:
 
 | Parameter | Description |
 |:--|:--|
-| **Token Name** | Mbongo Governance Token |
+| **Token Name** | Mbongo Token |
 | **Symbol** | MBG |
 | **Type** | Utility + Governance |
 | **Blockchain** | Mbongo-Chain (Cosmos SDK) |
 | **Consensus** | Hybrid PoS + PoUW |
 | **Decimals** | 6 |
-| **Launch Supply** | 1,000,000,000 MBG (fixed) |
-| **Initial Distribution** | Locked smart contract |
-| **Inflation** | 0% (deflationary via burns) |
+| **Max Supply** | 1,000,000,000 MBG |
+| **Block Time** | 5 minutes (average) |
+| **Initial Block Reward** | 50 MBG |
+| **Halving Interval** | Every 5 years |
+| **Emission Duration** | ~60 years |
+| **Fee Policy** | 50% burned, 50% to validators |
 
 ---
 
-## 3. Token Distribution
+## 3. Initial Distribution
 
 | Category | Allocation | Vesting / Notes |
 |:--|:--|:--|
-| **Community & Ecosystem** | 40% | Mining + PoUW rewards |
-| **Team & Founders** | 15% | 3-year linear vesting |
-| **Investors & Partners** | 10% | 2-year vesting |
-| **DAO Treasury** | 20% | Managed by governance votes |
-| **AI Research Grants** | 10% | Academic and scientific compute |
-| **Reserve / Future Growth** | 5% | Strategic fund |
+| **Proof of Useful Work (PoUW)** | 40% | Rewards for AI compute workloads |
+| **Staking (PoS)** | 25% | Validator incentives |
+| **Mbongo Foundation** | 10% | Long-term ecosystem growth |
+| **Team & Advisors** | 10% | 5-year vesting schedule |
+| **Partnerships & Ecosystem** | 10% | Strategic alliances and integrations |
+| **Community DAO Reserve** | 5% | Managed via DAO votes |
 
-✅ **Total Supply:** 1,000,000,000 MBG (hard cap)
-
----
-
-## 4. Utility Breakdown
-
-### 🛡️ 1. Staking
-- Validators must stake MBG to secure the network.  
-- Rewards are distributed every block (~6 seconds).  
-- Penalties (slashing) apply for downtime or misbehavior.
-
-### ⚙️ 2. Proof of Useful Work (PoUW)
-- GPU operators earn MBG tokens for completing AI computations.  
-- Rewards are calculated based on **compute time × energy efficiency × task complexity**.  
-- Results are verified cryptographically and validated by the network.
-
-### 🗳️ 3. Governance
-- Token holders vote on protocol upgrades, funding proposals, and policy decisions.  
-- DAO votes are proportional to staked MBG.  
-- Smart contract execution is transparent and auditable.
-
-### 💵 4. Payments & Fees
-- Transaction fees, AI job fees, and storage costs are paid in MBG.  
-- A portion of fees (2%) is burned to ensure deflationary pressure.
+✅ **Maximum Supply:** 1,000,000,000 MBG
 
 ---
 
-## 5. Emission & Reward Schedule
+## 4. Reward Halving Schedule
 
-- Fixed total supply: **1B MBG**.  
-- Initial unlock: 15% at mainnet launch (Q1 2026).  
-- Remaining tokens distributed through:
-  - PoUW GPU rewards: 40% over 5 years.  
-  - Staking rewards: 15% over 3 years.  
-  - DAO treasury unlocks: 10% annually via governance.  
+| Year | Block Reward (MBG) | Annual Inflation Trend |
+|:--|:--|:--|
+| 0 – 5 | 50 MBG | Initial expansion |
+| 5 – 10 | 25 MBG | Halving cycle #1 |
+| 10 – 15 | 12.5 MBG | Halving cycle #2 |
+| 15 – 20 | 6.25 MBG | Halving cycle #3 |
+| 20 – 60 | 3.125 → 0 MBG | Gradual tapering to zero |
 
----
-
-## 6. Deflationary Mechanisms
-
-- **2% burn** on every transaction fee.  
-- **DAO votes** may trigger strategic buybacks.  
-- **Inactivity penalties** burn unclaimed PoUW rewards after 180 days.
+This emission curve ensures AI providers and validators receive meaningful rewards early, while inflation decelerates as the network matures.
 
 ---
 
-## 7. Governance Model (DAO)
+## 5. Utility Breakdown
 
-The **Mbongo DAO** governs:
+### 🛡️ Staking (PoS)
+- Validators lock MBG to secure the chain.
+- Rewards are tied to validation performance and uptime.
+- Slashing applies for misbehavior or downtime.
 
-- Network upgrades.  
-- Treasury allocations.  
-- Security and ethics policies.  
-- PoUW task approval rules.  
+### ⚙️ Proof of Useful Work (PoUW)
+- GPU and CPU operators earn MBG for completing AI workloads (training, inference, simulations).
+- Rewards scale with computation time, accuracy, and task complexity.
+- Results are verified cryptographically via ZK proofs and validator consensus.
 
-DAO votes are implemented using **on-chain governance smart contracts** built on Cosmos SDK modules.
+### 🗳️ Governance
+- MBG stake grants voting rights within the Mbongo DAO.
+- Stakers propose and vote on protocol upgrades, incentive changes, and treasury allocations.
+- Governance smart contracts run on-chain, ensuring transparency and auditability.
+
+### 💵 Fees & Payments
+- Transaction, AI job, and storage fees are paid in MBG.
+- 50% of fees are burned, making the token deflationary; 50% go to active validators.
+- Mbongo’s fee policy draws inspiration from Ethereum’s EIP-1559, aligning network usage with scarcity.
 
 ---
 
-## 8. Economic Sustainability
+## 6. Emission & Reward Dynamics
 
-- Hybrid revenue model: **AI compute + transaction fees**.  
-- Treasury diversification through on-chain DeFi yield strategies.  
-- Annual economic audits by third-party firms.  
-- Transparent financial dashboards for community review.
+- The total supply is capped at **1B MBG** and cannot be inflated arbitrarily.
+- Block rewards begin at **50 MBG every ~5 minutes**, halving every 5 years.
+- Emissions taper over ~60 years, shifting focus from issuance to fee revenue.
+- Early distributions incentivize useful AI work (PoUW) and network validation (PoS).
+
+---
+
+## 7. Deflationary Mechanisms
+
+- **Fee Burn:** 50% of every network fee is burned, reducing the circulating supply.
+- **Slashing & Penalties:** Unclaimed AI rewards, inactivity penalties, and governance penalties can remove MBG from circulation.
+- **DAO Buybacks (optional):** DAO may execute buybacks as part of treasury management.
+
+---
+
+## 8. Governance Model (DAO)
+
+- MBG stakers participate in on-chain governance via the Mbongo DAO.
+- Key areas of control: network upgrades, security parameters, treasury allocations, ethical AI policies.
+- Staked MBG balances determine voting weight, encouraging long-term alignment.
 
 ---
 
 ## 9. Long-Term Token Utility
 
-- Power decentralized AI compute networks.  
-- Pay for training/inference services via API.  
-- Access developer tools and premium PoUW nodes.  
-- Participate in research funding votes.
+- Pay for decentralized AI compute and inference services.
+- Unlock premium tooling for ML pipelines, developer SDKs, and PoUW orchestration.
+- Fund research grants, ecosystem initiatives, and collaborations via DAO votes.
+- Serve as a collateral asset in Mbongo-native DeFi applications.
+
+---
+
+## 🔮 Sustainability
+
+- **Inflation Control:** The halving schedule and fee burn limit long-term inflation, ensuring scarcity.
+- **Reward Evolution:** Over decades, rewards shift from block issuance to staking income and transaction fees, favoring long-term validators.
+- **Real-World Value:** By tying rewards to useful AI work, MBG reflects tangible computational value rather than pure speculation.
 
 ---
 

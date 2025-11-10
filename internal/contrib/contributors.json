@@ -1,0 +1,35 @@
+[
+  {
+    "id": "mbg-001",
+    "name": "Amina K.",
+    "github_username": "aminak",
+    "email": "amina@example.com",
+    "role": "core developer",
+    "joined_date": "2025-09-12",
+    "future_allocation": 50000,
+    "contribution_area": "AI",
+    "status": "active"
+  },
+  {
+    "id": "mbg-002",
+    "name": "Jonas M.",
+    "github_username": "jonas-mbongo",
+    "email": "jonas@example.com",
+    "role": "contributor",
+    "joined_date": "2025-10-03",
+    "future_allocation": 25000,
+    "contribution_area": "Blockchain",
+    "status": "active"
+  },
+  {
+    "id": "mbg-003",
+    "name": "Selene P.",
+    "github_username": "selene-dev",
+    "email": null,
+    "role": "advisor",
+    "joined_date": "2025-11-01",
+    "future_allocation": 15000,
+    "contribution_area": "Docs",
+    "status": "pending"
+  }
+]

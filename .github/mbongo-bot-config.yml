@@ -1,0 +1,43 @@
+# 🤖 Mbongo-Bot Configuration
+# This file defines what the automation bot can do in the Mbongo-Chain repository.
+
+bot:
+  name: "mbongo-bot"
+  email: "bot@mbongo-chain.io"
+  description: "Automated CI/CD and contributor recognition bot for Mbongo-Chain."
+  active: true
+
+permissions:
+  contents: write         # Can push commits (e.g., security hall of fame)
+  pull-requests: write    # Can open and merge pull requests
+  issues: write           # Can comment or label issues
+  actions: read           # Can read GitHub Action metadata
+  workflows: read
+  discussions: read
+  security-events: write  # Can interact with Dependabot or vulnerability alerts
+
+behavior:
+  # Auto-commit prefix for clarity in the repo
+  commit_prefix: "[bot]"
+
+  # Branch rules for safety
+  allowed_branches:
+    - main
+    - develop
+    - security
+  restricted_branches:
+    - release
+    - protected/*
+
+  # Automatic PR merging rules
+  auto_merge:
+    enabled: true
+    require_approval_from_team: "core-devs"
+    labels:
+      - "auto-merge"
+      - "security:validated"
+
+notifications:
+  on_success: true
+  on_failure: true
+  email: "alerts@mbongo-chain.io"
