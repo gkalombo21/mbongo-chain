@@ -1,95 +1,95 @@
 # 🪙 Mbongo-Chain Whitepaper
 
 ## 1. Introduction
-Mbongo-Chain est une blockchain hybride open-source conçue pour un monde où l’intelligence artificielle (IA), la finance et l’infrastructure décentralisée convergent.  
-Son objectif est d’offrir une plateforme durable, scalable et équitable pour le calcul distribué d’IA et les services financiers numériques.
+Mbongo-Chain is an open-source hybrid blockchain designed for a world where artificial intelligence (AI), finance, and decentralized infrastructure converge.  
+Its goal is to provide a sustainable, scalable, and equitable platform for distributed AI computation and digital financial services.
 
-> Vision : créer une infrastructure blockchain universelle qui récompense la puissance de calcul utile et soutient une économie numérique réellement décentralisée.  
-> Mission : transformer la consommation énergétique du minage en une ressource productive dédiée à l’IA, à la science et à la finance décentralisée.
+> Vision: create a universal blockchain infrastructure that rewards useful computational power and supports a truly decentralized digital economy.  
+> Mission: transform mining energy consumption into a productive resource dedicated to AI, science, and decentralized finance.
 
 ---
 
-## 2. Architecture technique
-Mbongo-Chain combine deux mécanismes complémentaires :
+## 2. Technical Architecture
+Mbongo-Chain combines two complementary mechanisms:
 
-- Proof of Stake (PoS) : les validateurs sécurisent le réseau en verrouillant leurs MBG tokens.  
-- Proof of Useful Work (PoUW) : les compute nodes effectuent des calculs réels (IA, machine learning, etc.) et sont récompensés pour leur travail utile.
+- Proof of Stake (PoS): validators secure the network by locking their MBG tokens.  
+- Proof of Useful Work (PoUW): compute nodes perform real computations (AI, machine learning, etc.) and are rewarded for useful work.
 
-### Pôles d’infrastructure
-- Validators : assurent la cohérence et la sécurité du consensus Tendermint-style.  
-- Compute Nodes : exécutent des tâches IA et ML pour le réseau et les applications partenaires.  
-- Clients et DApps : interagissent avec la chaîne via API, SDK ou smart contracts.  
-- Cosmos SDK : permet l’interopérabilité inter-chaînes et une gouvernance modulaire.
+### Infrastructure Pillars
+- Validators: ensure coherence and security of the Tendermint-style consensus.  
+- Compute Nodes: execute AI and ML tasks for the network and partner applications.  
+- Clients and DApps: interact with the chain via API, SDK, or smart contracts.  
+- Cosmos SDK: enables cross-chain interoperability and modular governance.
 
 ---
 
 ## 3. Tokenomics — MBG Token
-### Paramètres clés
-| Élément | Détail |
+### Key Parameters
+| Item | Detail |
 |----------|--------|
-| Nom du Token | MBongo Token (MBG) |
-| Offre Totale Fixe | 1 000 000 000 MBG |
-| Type de Token | Utility + Governance |
-| Blockchain native | Mbongo-Chain (Cosmos SDK) |
-| Unité minimale | 0.000001 MBG |
+| Token Name | Mbongo Token (MBG) |
+| Fixed Total Supply | 1,000,000,000 MBG |
+| Token Type | Utility + Governance |
+| Native Blockchain | Mbongo-Chain (Cosmos SDK) |
+| Smallest Unit | 0.000001 MBG |
 
-### Distribution initiale
-| Catégorie | Pourcentage | Détails |
+### Initial Distribution
+| Category | Percentage | Details |
 |------------|--------------|----------|
-| Récompenses de minage / PoUW | 40 % | Réservé aux compute nodes IA |
-| Staking et validateurs | 25 % | Sécurisation du réseau |
-| Trésorerie communautaire | 20 % | DAO, financement open-source, hackathons |
-| Équipe et conseillers | 10 % | Verrouillés sur 3 ans |
-| Partenariats et écosystème | 5 % | Incitations pour intégrations externes |
+| Mining / PoUW Rewards | 40% | Reserved for AI compute nodes |
+| Staking and Validators | 25% | Network security |
+| Community Treasury | 20% | DAO, open-source funding, hackathons |
+| Team and Advisors | 10% | Locked over 3 years |
+| Partnerships and Ecosystem | 5% | Incentives for external integrations |
 
-### Émission et Halving
-- Durée totale : 100 ans  
-- Halving : tous les 5 ans  
-- Objectif : limiter l’inflation tout en maintenant des récompenses suffisantes pour le calcul utile et le staking.  
-- L’émission initiale suit une décroissance exponentielle inspirée du modèle Bitcoin.
-
----
-
-## 4. Cas d’utilisation du MBG
-- Paiement pour calculs IA  
-- Récompenses de staking  
-- Frais de transaction  
-- Gouvernance DAO  
-- Économie interne pour les DApps
+### Emission and Halving
+- Total duration: 100 years  
+- Halving: every 5 years  
+- Objective: limit inflation while maintaining sufficient rewards for useful compute and staking.  
+- Initial issuance follows an exponential decay inspired by Bitcoin’s model.
 
 ---
 
-## 5. Gouvernance décentralisée
-La gouvernance est assurée par une DAO.  
-Les détenteurs de MBG peuvent proposer des améliorations, voter, et élire des validateurs.  
-Le pouvoir de vote est proportionnel au staking.
+## 4. Use Cases for MBG
+- Payment for AI computations  
+- Staking rewards  
+- Transaction fees  
+- DAO governance  
+- Internal economy for DApps
 
 ---
 
-## 6. Sécurité et conformité
-- Consensus Tendermint + double validation cryptographique  
-- Préparation à la cryptographie post-quantique (Dilithium/Falcon)  
-- Audits de sécurité avant chaque mise à jour majeure  
-- Modules optionnels KYC/AML pour intégrations régulées  
+## 5. Decentralized Governance
+Governance is managed by a DAO.  
+MBG holders can propose improvements, vote, and elect validators.  
+Voting power is proportional to staking.
 
 ---
 
-## 7. Feuille de route
-| Phase | Objectif | Statut |
+## 6. Security and Compliance
+- Tendermint consensus + dual cryptographic validation  
+- Preparing for post-quantum cryptography (Dilithium/Falcon)  
+- Security audits before each major upgrade  
+- Optional KYC/AML modules for regulated integrations  
+
+---
+
+## 7. Roadmap
+| Phase | Objective | Status |
 |--------|-----------|--------|
-| Phase 1 | Testnet local & CI/CD (Go, Cosmos SDK) | ✅ En cours |
-| Phase 2 | Lancement du Mainnet + Staking PoS | ⏳ À venir |
-| Phase 3 | Intégration complète IA/PoUW + API publique | 🔜 Planifié |
-| Phase 4 | DAO et interopérabilité inter-chaînes | 🔜 Planifié |
+| Phase 1 | Local testnet & CI/CD (Go, Cosmos SDK) | ✅ In progress |
+| Phase 2 | Mainnet launch + PoS staking | ⏳ Upcoming |
+| Phase 3 | Full AI/PoUW integration + public API | 🔜 Planned |
+| Phase 4 | DAO and cross-chain interoperability | 🔜 Planned |
 
 ---
 
-## 8. Vision à long terme
-Mbongo-Chain veut devenir une infrastructure universelle pour la recherche, l’IA et la finance décentralisée.  
-Chaque watt dépensé doit produire de la valeur utile.
+## 8. Long-Term Vision
+Mbongo-Chain aims to become a universal infrastructure for research, AI, and decentralized finance.  
+Every watt spent should create useful value.
 
-> Mbongo-Chain : Transforming energy into intelligence ⚡🧠  
+> Mbongo-Chain: Transforming energy into intelligence ⚡🧠  
 
 ---
 
-© 2025 Mbongo-Chain Project — Open-source sous licence MIT.
+© 2025 Mbongo-Chain Project — Open-source under the MIT license.

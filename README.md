@@ -105,5 +105,14 @@ Mbongo Chain is open-source under the [MIT License](LICENSE).
 
 ---
 
+## 📄 Documentation
+
+- [📘 Read the Full Whitepaper](./WHITEPAPER.md)
+- [Contributor Style Guide](STYLE_GUIDE_FOR_CONTRIBUTORS.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+
+---
+
 ## Mission
 Mbongo Chain is building a decentralized, Africa-first AI infrastructure where useful work is rewarded, innovation thrives, and global collaboration shapes a resilient digital future.

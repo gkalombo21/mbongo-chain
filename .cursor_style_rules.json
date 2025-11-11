@@ -1,0 +1,16 @@
+{
+  "rules": [
+    {
+      "pattern": "**/*.md",
+      "instruction": "Ensure all Markdown files follow professional whitepaper structure: include a clear title (H1), subtitles (H2-H3), a table of contents if long, bullet lists instead of paragraphs longer than 8 lines, and English technical tone. Automatically fix inconsistent capitalization, extra spaces, or punctuation issues."
+    },
+    {
+      "pattern": "**/*.go",
+      "instruction": "Ensure Go source code files use consistent formatting: correct indentation (tabs = 1), English comments, exported function docstrings in GoDoc style, and logical grouping of imports (standard, external, internal)."
+    },
+    {
+      "pattern": "**/*",
+      "instruction": "Globally enforce consistent line endings (LF), remove trailing whitespaces, and ensure every file ends with a newline character. Maintain English as the default project language."
+    }
+  ]
+}

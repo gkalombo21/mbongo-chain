@@ -1,0 +1,6 @@
+{
+  "on_project_open": {
+    "enabled": true,
+    "message": "🌍 Welcome back Gilbert 👋\nMbongo-Chain context loaded successfully.\nProject path: C:/Users/gkalo/mbongo/mbongo-chain\nAll agents and terminals are synchronized and ready."
+  }
+}
