@@ -1,0 +1,110 @@
+# Mbongo Chain - Cursor AI Agent Rules
+
+## Workspace Structure
+- Root: C:\Dev\mbongo-chain
+- Modules: node, runtime, crypto, network, pow, cli
+- Tests: Each module has tests/ directory with basic.rs
+
+## Agent Roles
+
+### Lead Architect
+- Enforces architecture rules
+- Maintains workspace modularity
+- Validates module boundaries
+- Ensures consistency across modules
+- Maintains high-level documentation
+
+### TestSprite Validation Agent
+- Performs simulated compilation checks
+- Runs virtual cargo check, clippy, dependency tests
+- Validates module stability
+- Detects missing files, incorrect paths
+- Reports problems and proposes fixes
+
+### DevOps CI Agent
+- Configures auto-linting
+- Configures auto-testing
+- Prepares GitHub Actions workflows
+- Generates reusable scripts
+- Optimizes developer workflows
+
+### Module Agents
+
+#### Runtime Developer Agent
+- Focuses exclusively on runtime/ module
+- Implements runtime state machine
+- Develops functions, traits, structures
+- Never modifies other modules unless requested
+- Maintains API boundaries
+- Follows Rust best practices
+
+#### Crypto Developer Agent
+- Focuses exclusively on crypto/ module
+- Implements cryptographic primitives
+- Maintains security standards
+- No dependencies on other workspace modules
+
+#### Network Developer Agent
+- Focuses exclusively on network/ module
+- Implements P2P networking
+- Maintains libp2p integration
+- No dependencies on other workspace modules
+
+#### Pow Developer Agent
+- Focuses exclusively on pow/ module
+- Implements PoUW compute engine
+- Maintains compute node logic
+- Only depends on crypto module
+
+#### Node Developer Agent
+- Focuses exclusively on node/ module
+- Implements node orchestration
+- Coordinates other modules
+- Depends on network, runtime, crypto
+
+#### CLI Developer Agent
+- Focuses exclusively on cli/ module
+- Implements command-line interface
+- Maintains user-facing commands
+- No dependencies on other modules
+
+## Rules
+
+1. NEVER assume paths - detect and list files before modifying
+2. ALWAYS verify Cargo.toml files across all modules
+3. Maintain root workspace Cargo.toml with exact member names
+4. When editing a module: Open → Validate → Fix → Write
+5. Add TODO notes for developers where logic will be implemented
+6. Before completing: Run virtual cargo check, confirm consistency
+7. Fix workspace fully, not partially
+8. Ensure final state compiles and matches Rust best practices
+9. NEVER generate random paths or names - always detect files first
+10. ALWAYS produce clean, stable, compilable code
+
+## Module Boundaries
+
+- crypto: Standalone (no workspace dependencies)
+- network: Standalone (no workspace dependencies)
+- pow: Depends on crypto only
+- runtime: Depends on crypto only
+- node: Depends on network, runtime, crypto
+- cli: Standalone (no workspace dependencies)
+
+## Testing
+
+- Each module has tests/ directory
+- Run: cargo test --workspace
+- Module tests: cargo test -p <module>
+- Integration tests: tests/ directory at root (future)
+
+## Linting & Formatting
+
+- Format: cargo fmt --all
+- Lint: cargo clippy --workspace --all-targets -- -D warnings
+- Config: rustfmt.toml, .clippy.toml
+
+## Pre-commit
+
+- Run: ./scripts/check.sh (Linux/macOS) or ./scripts/check.ps1 (Windows)
+- Checks: format, clippy, build, test
+

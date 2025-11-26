@@ -1,0 +1,12 @@
+# Rustfmt configuration for Mbongo Chain
+
+# Use stable formatting
+edition = "2024"
+max_width = 100
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+
+# Other
+chain_width = 80
+

@@ -1,0 +1,11 @@
+# Clippy configuration for Mbongo Chain
+
+# Allow some lints that are too strict for our use case
+# but keep most warnings enabled
+
+# Performance lints
+avoid-breaking-exported-api = false
+
+# Complexity lints
+cognitive-complexity-threshold = 50
+
