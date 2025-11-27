@@ -475,26 +475,34 @@ impl ComputeScore {
 }
 ```
 
-### Future GPU Market Integration
+### Future Compute Market Integration
 
 *Status: Placeholder*
 
+The PoUW layer is a heterogeneous compute layer (GPU/TPU/CPU/FPGA/ASIC) that accepts proofs from any supported accelerator hardware, provided the computation is deterministic and verifiable on-chain.
+
+For full compute layer details, see:
+- [docs/compute_engine_overview.md](./compute_engine_overview.md) — Compute engine architecture
+- [docs/compute_value.md](./compute_value.md) — Compute economics and provider incentives
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                     GPU MARKET INTEGRATION (FUTURE)                         │
+│             COMPUTE MARKET INTEGRATION (FUTURE - Heterogeneous)             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  Components:                                                                │
-│  • GPU Provider Registry                                                    │
-│  • Hardware Attestation                                                     │
-│  • Real-time Pricing Oracle                                                 │
-│  • Task-GPU Matching Algorithm                                              │
+│  • Compute Provider Registry (GPU/TPU/CPU/FPGA/ASIC)                        │
+│  • Hardware Attestation & Type Detection                                    │
+│  • Real-time Pricing Oracle (normalized across hardware)                    │
+│  • Task-Accelerator Matching Algorithm                                      │
 │  • SLA Enforcement                                                          │
 │                                                                             │
-│  Integration Points:                                                        │
-│  • NVIDIA CUDA attestation                                                  │
-│  • AMD ROCm verification                                                    │
-│  • Intel oneAPI support                                                     │
+│  Integration Points (Heterogeneous Hardware):                               │
+│  • NVIDIA CUDA attestation (GPU)                                            │
+│  • AMD ROCm verification (GPU)                                              │
+│  • Intel oneAPI support (CPU/GPU/FPGA)                                      │
+│  • Google TPU API (TPU)                                                     │
+│  • Custom ASIC drivers (ASIC)                                               │
 │  • Apple Metal (future)                                                     │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘

@@ -24,6 +24,8 @@
 
 This document defines the **economic, functional, and strategic value of compute** within Mbongo Chain's Proof-of-Useful-Work (PoUW) model.
 
+**PoUW is a heterogeneous compute layer** that accepts proofs from GPUs, TPUs, CPUs, FPGAs, ASICs, and future accelerator hardware, as long as the computation is deterministic and verifiable on-chain. The architecture is compute-first with initial focus on GPUs, but designed for heterogeneous accelerators.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                         COMPUTE AS A NATIVE RESOURCE                                    │
@@ -47,7 +49,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   │   ═════════════════════════════════════                                         │  │
 │   │                                                                                 │  │
 │   │   • Computation is a FIRST-CLASS ECONOMIC ACTIVITY                             │  │
-│   │   • GPU work is USEFUL (AI/ML, rendering, ZK proofs)                           │  │
+│   │   • Compute work is USEFUL (AI/ML, rendering, ZK proofs, video, scientific)    │  │
 │   │   • Execution is VERIFIABLE (deterministic receipts)                           │  │
 │   │   • Results are EMBEDDED IN CONSENSUS (block metadata)                         │  │
 │   │   • Providers are INCENTIVIZED (50% of block rewards)                          │  │
@@ -122,11 +124,13 @@ This document defines the **economic, functional, and strategic value of compute
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 GPU Receipts Validated On-Chain
+### 2.2 Compute Receipts Validated On-Chain
+
+Compute receipts are hardware-agnostic and support proof validation for GPUs, TPUs, CPUs, FPGAs, ASICs, and compatible accelerators.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                         GPU RECEIPT STRUCTURE                                           │
+│                         COMPUTE RECEIPT STRUCTURE                                       │
 ├─────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                         │
 │   RECEIPT FIELDS                                                                        │
@@ -136,10 +140,10 @@ This document defines the **economic, functional, and strategic value of compute
 │   │                                                                                 │  │
 │   │   struct ComputeReceipt {                                                       │  │
 │   │       task_id:        Hash,           // Unique task identifier                │  │
-│   │       provider_id:    PublicKey,      // GPU provider identity                 │  │
+│   │       provider_id:    PublicKey,      // Compute provider identity             │  │
 │   │       input_hash:     Hash,           // Hash of task inputs                   │  │
 │   │       output_hash:    Hash,           // Hash of computation result            │  │
-│   │       work_units:     u64,            // Measured GPU cycles                   │  │
+│   │       work_units:     u64,            // Measured compute cycles               │  │
 │   │       timestamp:      u64,            // Unix timestamp                        │  │
 │   │       execution_time: u64,            // Milliseconds to complete              │  │
 │   │       attester_sigs:  Vec<Signature>, // Attester endorsements                 │  │
@@ -218,7 +222,7 @@ This document defines the **economic, functional, and strategic value of compute
 │                                                                                         │
 │   2. RUNTIME                                                                            │
 │      • Manages compute task state                                                      │
-│      • Handles GPU provider registration                                               │
+│      • Handles compute provider registration                                           │
 │      • Enforces compute gas limits                                                     │
 │                                                                                         │
 │   3. MEMPOOL                                                                            │
@@ -256,7 +260,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   │                                                                                 │  │
 │   │       // PoUW-specific fields                                                  │  │
 │   │       compute_receipts_root: Hash,    // Merkle root of all receipts          │  │
-│   │       total_work_units:      u64,     // Aggregate GPU cycles in block        │  │
+│   │       total_work_units:      u64,     // Aggregate compute cycles in block    │  │
 │   │       pouw_score:            u64,     // Computed PoUW contribution           │  │
 │   │       provider_count:        u32,     // Number of providers rewarded         │  │
 │   │   }                                                                             │  │
@@ -415,7 +419,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   provider_reward = (work_units[provider] / total_work_units) × pouw_pool              │
 │                                                                                         │
 │   Where:                                                                                │
-│   • work_units[provider]: GPU cycles from valid receipts                               │
+│   • work_units[provider]: Compute cycles from valid receipts                           │
 │   • total_work_units: All valid work in the block                                      │
 │   • pouw_pool: 50% of block reward (0.05 MBO in Year 1-5)                              │
 │                                                                                         │
@@ -458,7 +462,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   • Blocks per year: 31,536,000                                                        │
 │   • Total annual PoUW: 1,576,800 MBO                                                   │
 │                                                                                         │
-│   This is distributed to all GPU providers proportionally.                             │
+│   This is distributed to all compute providers proportionally.                         │
 │                                                                                         │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -474,7 +478,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   ═══════════════                                                                       │
 │                                                                                         │
 │   1. WORK UNITS COMPLETED                                                               │
-│      • Measured GPU cycles                                                             │
+│      • Measured compute cycles                                                         │
 │      • Verified via receipts                                                           │
 │      • Primary determinant of reward                                                   │
 │                                                                                         │
@@ -495,7 +499,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   provider_score = work_units × quality_multiplier × availability_bonus                │
 │                                                                                         │
 │   Where:                                                                                │
-│   • work_units: Sum of GPU cycles from valid receipts                                  │
+│   • work_units: Sum of compute cycles from valid receipts                              │
 │   • quality_multiplier: 1.0 base, reduced for any verification failures               │
 │   • availability_bonus: 1.0 - 1.1 based on uptime                                      │
 │                                                                                         │
@@ -646,7 +650,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   ════════════════                                                                      │
 │                                                                                         │
 │   • Base fee: BURNED (deflationary)                                                    │
-│   • Priority fee: To GPU provider                                                      │
+│   • Priority fee: To compute provider                                                  │
 │                                                                                         │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -678,7 +682,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   ═══════════                                                                           │
 │                                                                                         │
 │   Supply grows with:                                                                   │
-│   • New GPU providers joining                                                          │
+│   • New compute providers joining                                                      │
 │   • Existing providers upgrading hardware                                              │
 │   • Geographic expansion                                                               │
 │   • Improved software efficiency                                                       │
@@ -894,7 +898,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   │                                                                                 │  │
 │   │   Factor              │ Weight │ Measurement                                    │  │
 │   │   ────────────────────┼────────┼────────────────────────────────────────────────│  │
-│   │   Work Completed      │ 60%    │ Total valid GPU cycles                        │  │
+│   │   Work Completed      │ 60%    │ Total valid compute cycles                    │  │
 │   │   Verification Rate   │ 25%    │ % of receipts passing verification            │  │
 │   │   Availability        │ 15%    │ Uptime and task acceptance rate               │  │
 │   │                                                                                 │  │
@@ -926,7 +930,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   │                                                                                 │  │
 │   │   CHEAT ATTEMPT 1: Fake Work Units                                              │  │
 │   │   ─────────────────────────────────                                             │  │
-│   │   Attack: Claim more GPU cycles than actually used                             │  │
+│   │   Attack: Claim more compute cycles than actually used                         │  │
 │   │   Prevention: Work units verified via result reproduction                      │  │
 │   │   Detection: Mismatch triggers investigation                                   │  │
 │   │   Consequence: Slashing + reputation damage                                    │  │
@@ -1184,7 +1188,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   GPU PROVIDERS AS CONSENSUS PARTICIPANTS                                               │
 │   ═══════════════════════════════════════                                               │
 │                                                                                         │
-│   In Mbongo, GPU providers are NOT add-on actors. They are:                            │
+│   In Mbongo, compute providers (GPU/TPU/CPU/FPGA/ASIC) are NOT add-on actors. They are:│
 │                                                                                         │
 │   • Core consensus participants                                                        │
 │   • Rewarded from block rewards (50%)                                                  │
@@ -1213,7 +1217,7 @@ This document defines the **economic, functional, and strategic value of compute
 │   │                                                                                 │  │
 │   │     • Not an add-on service—native to protocol                                 │  │
 │   │     • 50% of block rewards allocated to compute                                │  │
-│   │     • GPU providers are consensus participants                                 │  │
+│   │     • Compute providers are consensus participants                             │  │
 │   │     • Compute receipts embedded in block metadata                              │  │
 │   │                                                                                 │  │
 │   └─────────────────────────────────────────────────────────────────────────────────┘  │

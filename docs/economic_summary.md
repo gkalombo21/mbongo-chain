@@ -88,7 +88,7 @@
 │   │   GAS FEES                                                                      │  │
 │   │   ────────                                                                      │  │
 │   │   • Execution gas: Transaction processing                                      │  │
-│   │   • Compute gas: GPU/PoUW task payments                                        │  │
+│   │   • Compute gas: PoUW task payments (GPU/TPU/CPU/FPGA/ASIC)                    │  │
 │   │   • Storage gas: On-chain data storage                                         │  │
 │   │   • Network gas: Message propagation                                           │  │
 │   │                                                                                 │  │
@@ -111,9 +111,9 @@
 │   │                                                                                 │  │
 │   │   COMPUTE TASKS (PoUW)                                                          │  │
 │   │   ────────────────────                                                          │  │
-│   │   • GPU providers earn MBO for valid compute receipts                          │  │
-│   │   • Users pay MBO for AI/ML inference and batch jobs                           │  │
-│   │   • Compute fees support decentralized GPU marketplace                         │  │
+│   │   • Compute providers earn MBO for valid compute receipts                      │  │
+│   │   • Users pay MBO for AI/ML, rendering, ZK proofs, and batch jobs              │  │
+│   │   • Compute fees support decentralized compute marketplace                     │  │
 │   │                                                                                 │  │
 │   └─────────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                         │
@@ -168,7 +168,7 @@
 │                                                                                         │
 │   ─────────────────────────────────────────────────────────────────────────────────────│
 │                                                                                         │
-│   GPU PROVIDERS (PoUW)                           │ 50% of Block Rewards                │
+│   COMPUTE PROVIDERS (PoUW)                       │ 50% of Block Rewards                │
 │   ════════════════════                           │                                     │
 │                                                  │                                     │
 │   Role:                                          │  Reward Sources:                    │
@@ -177,7 +177,7 @@
 │   • Contribute to chain security                 │  • Priority fees                    │
 │                                                  │                                     │
 │   Requirements:                                  │  Risk:                              │
-│   • GPU hardware                                 │  • 1,000 MBO per invalid receipt    │
+│   • Compute hardware (GPU/TPU/CPU/FPGA/ASIC)     │  • 1,000 MBO per invalid receipt    │
 │   • Stake optional (improves priority)           │  • Reputation damage                │
 │                                                                                         │
 │   ─────────────────────────────────────────────────────────────────────────────────────│
@@ -221,7 +221,7 @@
 | Participant | Reward Source | Share | Requirements |
 |-------------|---------------|-------|--------------|
 | **Validators** | Block rewards + fees | 50% of total (80% of PoS) | 50,000 MBO stake |
-| **GPU Providers** | Block rewards + fees | 50% of total | GPU hardware |
+| **Compute Providers** | Block rewards + fees | 50% of total | Compute hardware (GPU/TPU/CPU/FPGA/ASIC) |
 | **Delegators** | Validator share | 20% of PoS pool | 100 MBO |
 | **Developers** | Ecosystem grants | Milestone-based | Build on Mbongo |
 | **Community** | Incentives pool | Per-epoch stream | Contribute value |
@@ -328,7 +328,7 @@
 │                                                                                         │
 │   Calculation based on:                                                                │
 │   • Compute integrity: Valid receipts only                                             │
-│   • Work units: Measured GPU cycles                                                    │
+│   • Work units: Measured compute cycles (normalized across hardware)                   │
 │   • Performance: Verification success rate                                             │
 │                                                                                         │
 │   Formula:                                                                              │
@@ -356,7 +356,7 @@
 │   ════════════════════                                                                  │
 │                                                                                         │
 │   Standard transactions:      Priority fee → Block proposer (validator)                │
-│   Compute transactions:       Priority fee → GPU provider                              │
+│   Compute transactions:       Priority fee → Compute provider                          │
 │   Oracle messages:            Priority fee → Attesters                                 │
 │                                                                                         │
 │   Base fee is ALWAYS burned regardless of transaction type.                            │
@@ -476,6 +476,19 @@
 │                                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
 │   │                                                                                 │  │
+│   │   ✓ HETEROGENEOUS COMPUTE MARKET (PoUW)                                         │  │
+│   │                                                                                 │  │
+│   │     PoUW is designed as a heterogeneous compute market. Any hardware class     │  │
+│   │     (GPU, TPU, CPU, FPGA, ASIC, or future accelerators) can participate,       │  │
+│   │     provided it runs deterministic jobs and submits verifiable proofs.         │  │
+│   │                                                                                 │  │
+│   │     This ensures maximum supply-side participation and hardware diversity,     │  │
+│   │     while maintaining strict verification and economic guarantees.             │  │
+│   │                                                                                 │  │
+│   └─────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                         │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
+│   │                                                                                 │  │
 │   │   ✓ HYBRID PoS–PoUW STRENGTHENS SECURITY                                        │  │
 │   │                                                                                 │  │
 │   │     • Two independent security layers                                          │  │
@@ -537,7 +550,7 @@ For comprehensive information on each topic, refer to:
 | **[token_distribution.md](./token_distribution.md)** | Allocation breakdown, vesting schedules |
 | **[vesting_model.md](./vesting_model.md)** | Unlock mechanics, cliff periods |
 | **[incentive_design.md](./incentive_design.md)** | Participant incentives, slashing model |
-| **[compute_value.md](./compute_value.md)** | GPU compute economics, PoUW value |
+| **[compute_value.md](./compute_value.md)** | Heterogeneous compute economics, PoUW value |
 | **[utility_value.md](./utility_value.md)** | MBO token utility across ecosystem |
 | **[economic_security.md](./economic_security.md)** | Security model, attack economics |
 | **[supply_schedule.md](./supply_schedule.md)** | 50-year emission projection |

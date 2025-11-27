@@ -185,12 +185,12 @@ PoUW rewards are distributed based on verified compute contributions:
 │          ▼                                                  │
 │   ┌─────────────┐                                          │
 │   │  Task       │  Protocol assigns task to                │
-│   │  Assignment │  eligible GPU provider                   │
+│   │  Assignment │  eligible compute provider               │
 │   └──────┬──────┘                                          │
 │          │                                                  │
 │          ▼                                                  │
 │   ┌─────────────┐                                          │
-│   │  GPU        │  Provider executes task                  │
+│   │  Compute    │  Provider executes task                  │
 │   │  Execution  │  in deterministic environment            │
 │   └──────┬──────┘                                          │
 │          │                                                  │
@@ -229,7 +229,7 @@ Each verified compute receipt generates a reward based on:
 │      Computational complexity of the task                  │
 │                                                             │
 │   2. RESOURCE USAGE                                        │
-│      GPU time, memory, and operations consumed             │
+│      Accelerator time, memory, and operations consumed     │
 │                                                             │
 │   3. VERIFICATION STATUS                                   │
 │      Verified (1.0) or Failed (0.0)                        │
@@ -266,9 +266,9 @@ Each verified compute receipt generates a reward based on:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.4 GPU Scoring Model
+### 3.4 Compute Provider Scoring Model
 
-Provider scores influence task assignment priority and reward multipliers:
+Provider scores influence task assignment priority and reward multipliers. Scoring is hardware-agnostic and normalized across GPU, TPU, CPU, FPGA, ASIC, and other accelerators:
 
 | Factor | Weight | Description |
 |--------|--------|-------------|
@@ -279,7 +279,7 @@ Provider scores influence task assignment priority and reward multipliers:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                 GPU PROVIDER SCORE                          │
+│               COMPUTE PROVIDER SCORE                        │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   Provider_Score = (0.40 × Success_Rate)                   │
@@ -298,7 +298,7 @@ Provider scores influence task assignment priority and reward multipliers:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-> **Note:** Detailed GPU scoring aligned with AIDA is specified in `aida_scoring.md`.
+> **Note:** Detailed compute provider scoring aligned with AIDA is specified in `aida_scoring.md`.
 
 ---
 
@@ -473,11 +473,11 @@ All collected fees are added to the block reward pool and distributed:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Scenario 2: High-Performance GPU Provider
+### Scenario 2: High-Performance Compute Provider
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│         SCENARIO: HIGH-PERFORMANCE GPU PROVIDER             │
+│       SCENARIO: HIGH-PERFORMANCE COMPUTE PROVIDER           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   Context:                                                  │
@@ -524,7 +524,7 @@ All collected fees are added to the block reward pool and distributed:
 │   Proposer Bonus = 0.005 MBO                               │
 │   Total: ~0.034 MBO                                        │
 │                                                             │
-│   Top GPU Provider (30% work share):                       │
+│   Top Compute Provider (30% work share):                   │
 │   ─────────────────────────────────                        │
 │   Work Share = 0.3 × 0.30 = 0.09 MBO                       │
 │                                                             │
@@ -595,14 +595,14 @@ Optimize by: Running reliable infrastructure, minimizing downtime, and building 
 
 ### For Compute Providers
 
-As a GPU provider, your MBO rewards depend on:
+As a compute provider (GPU, TPU, CPU, FPGA, ASIC, or other accelerators), your MBO rewards depend on:
 
 - **Work Volume:** Complete more verified tasks to increase your work unit share
 - **Task Difficulty:** Higher-tier tasks generate more work units per completion
 - **Provider Score:** Maintain high success rate and timeliness for priority assignment
-- **Capacity:** More GPU resources enable handling larger task volumes
+- **Capacity:** More compute resources enable handling larger task volumes
 
-Optimize by: Ensuring deterministic execution, maintaining high availability, and investing in capable hardware.
+Optimize by: Ensuring deterministic execution, maintaining high availability, and investing in capable hardware (any supported accelerator type).
 
 ### For Delegators (Future Extension)
 
@@ -624,7 +624,7 @@ As a delegator, you can earn passive MBO rewards by:
 | `token_intro.md` | MBO token introduction |
 | `monetary_policy.md` | Fixed supply and halving schedule |
 | `slashing_spec.md` | Detailed slashing mechanics |
-| `aida_scoring.md` | GPU scoring model |
+| `aida_scoring.md` | Compute provider scoring model |
 | `delegation_guide.md` | Delegator instructions |
 
 ---

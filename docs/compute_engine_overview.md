@@ -33,18 +33,20 @@ The Compute Engine encompasses:
 | Component | Description |
 |-----------|-------------|
 | **PoUW Protocol** | Proof-of-Useful-Work consensus integration |
-| **GPU Coordination** | Global GPU provider network orchestration |
+| **Heterogeneous Compute Coordination** | Global compute provider network orchestration (GPU, TPU, CPU, FPGA, ASIC, and future accelerators) |
 | **Task Management** | Job submission, assignment, and tracking |
 | **Validation Layer** | Deterministic result verification |
 | **Reward System** | Incentive distribution for compute providers |
 
 ### Core Thesis
 
-Traditional blockchains waste computational resources on arbitrary proof-of-work or limit computation to simple VM operations. Mbongo Chain redirects this computational capacity toward **useful work**—ML inference, training, ZK proof generation, and general-purpose GPU compute—while maintaining consensus security guarantees.
+Traditional blockchains waste computational resources on arbitrary proof-of-work or limit computation to simple VM operations. Mbongo Chain redirects this computational capacity toward **useful work**—AI/ML inference and training, 3D rendering, video processing and transcoding, scientific simulation, ZK proof generation, and other high-performance parallel workloads—while maintaining consensus security guarantees.
+
+**PoUW is a heterogeneous compute layer** that accepts proofs from GPUs, TPUs, CPUs, FPGAs, ASICs, and future accelerator hardware, as long as the computation is deterministic and verifiable on-chain. The architecture is compute-first with initial focus on GPUs, but designed for heterogeneous accelerators.
 
 ### Audience
 
-- **Compute Provider Operators** setting up GPU nodes
+- **Compute Provider Operators** setting up compute nodes (GPU, TPU, CPU, FPGA, ASIC, and other accelerators)
 - **Protocol Engineers** implementing PoUW mechanisms
 - **Application Developers** integrating compute capabilities
 - **Economists** analyzing incentive structures
@@ -86,7 +88,7 @@ Modern AI and blockchain workloads face a critical resource constraint:
 - AI model sizes double every 3-6 months
 - GPU production cannot match demand growth
 - Cloud providers control access and pricing
-- Idle consumer GPUs remain underutilized globally
+- Idle consumer compute hardware (GPUs, CPUs, TPUs) remains underutilized globally
 
 ### 2.2 Mbongo's Compute-Centric Design
 
@@ -114,7 +116,7 @@ Mbongo Chain addresses this by making compute a **first-class protocol primitive
 │            ▼                              ▼                         │
 │   ┌─────────────────┐            ┌─────────────────┐               │
 │   │    Storage      │            │ Compute Engine  │◀── NEW        │
-│   │   (State Only)  │            │  (Global GPUs)  │               │
+│   │   (State Only)  │            │(Heterogeneous)  │               │
 │   └─────────────────┘            └────────┬────────┘               │
 │                                           │                         │
 │                                           ▼                         │
@@ -147,9 +149,9 @@ Mbongo Chain addresses this by making compute a **first-class protocol primitive
 
 | Stakeholder | Benefits |
 |-------------|----------|
-| **Developers** | Access global GPU pool via simple API; pay-per-compute pricing |
+| **Developers** | Access global compute pool via simple API; pay-per-compute pricing |
 | **Validators** | Earn additional rewards by providing compute; higher block production probability |
-| **Compute Providers** | Monetize GPU hardware; permissionless participation |
+| **Compute Providers** | Monetize compute hardware (GPU, TPU, CPU, FPGA, ASIC); permissionless participation |
 | **Users** | Access AI/ML capabilities through on-chain applications |
 
 ---
@@ -388,7 +390,7 @@ Where:
 │                              ▼                                      │
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │ STEP 6: COMPUTATION EXECUTION                                │  │
-│  │ GPU provider executes workload:                              │  │
+│  │ Compute provider executes workload:                          │  │
 │  │ • Sandboxed execution environment                            │  │
 │  │ • Deterministic compute settings                             │  │
 │  │ • Resource metering active                                   │  │
@@ -450,13 +452,15 @@ Where:
 
 ---
 
-## 5. GPU Provider Architecture
+## 5. Compute Provider Architecture
 
 ### 5.1 Provider Node Architecture
 
+Compute providers can operate any compatible accelerator hardware (GPU, TPU, CPU, FPGA, ASIC, and future accelerators). The PoUW system normalizes performance scores across hardware types.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    GPU PROVIDER NODE                                │
+│                    COMPUTE PROVIDER NODE                            │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │   ┌─────────────────────────────────────────────────────────────┐  │
@@ -481,11 +485,11 @@ Where:
 │   │   └──────────────────────────┬───────────────────────────┘   │  │
 │   │                              │                               │  │
 │   │   ┌──────────────────────────▼───────────────────────────┐   │  │
-│   │   │                   GPU LAYER                          │   │  │
-│   │   │                                                      │   │  │
+│   │   │                 ACCELERATOR LAYER                    │   │  │
+│   │   │            (GPU / TPU / CPU / FPGA / ASIC)           │   │  │
 │   │   │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌────────┐  │   │  │
-│   │   │  │  GPU 0  │  │  GPU 1  │  │  GPU 2  │  │  GPU N │  │   │  │
-│   │   │  │ (24GB)  │  │ (24GB)  │  │ (48GB)  │  │  ...   │  │   │  │
+│   │   │  │ Accel 0 │  │ Accel 1 │  │ Accel 2 │  │Accel N │  │   │  │
+│   │   │  │ (GPU)   │  │ (GPU)   │  │ (TPU)   │  │  ...   │  │   │  │
 │   │   │  └─────────┘  └─────────┘  └─────────┘  └────────┘  │   │  │
 │   │   │                                                      │   │  │
 │   │   └──────────────────────────────────────────────────────┘   │  │
@@ -497,12 +501,14 @@ Where:
 
 ### 5.2 Hardware Requirements
 
-| Tier | GPU | VRAM | CPU | RAM | Storage | Network |
-|------|-----|------|-----|-----|---------|---------|
-| **Entry** | RTX 3080 | 10 GB | 8 cores | 32 GB | 500 GB NVMe | 500 Mbps |
-| **Standard** | RTX 3090/4090 | 24 GB | 16 cores | 64 GB | 1 TB NVMe | 1 Gbps |
-| **Professional** | A100 | 40-80 GB | 32 cores | 128 GB | 2 TB NVMe | 10 Gbps |
-| **Enterprise** | H100 | 80 GB | 64 cores | 256 GB | 4 TB NVMe | 25 Gbps |
+The PoUW system supports heterogeneous hardware. Below are example tiers for GPU-based providers, but TPU, FPGA, ASIC, and high-core-count CPU providers are equally eligible with normalized scoring.
+
+| Tier | Accelerator Example | Memory | CPU | RAM | Storage | Network |
+|------|---------------------|--------|-----|-----|---------|---------|
+| **Entry** | RTX 3080 (GPU) | 10 GB | 8 cores | 32 GB | 500 GB NVMe | 500 Mbps |
+| **Standard** | RTX 3090/4090 (GPU) | 24 GB | 16 cores | 64 GB | 1 TB NVMe | 1 Gbps |
+| **Professional** | A100 (GPU) / TPU v4 | 40-80 GB | 32 cores | 128 GB | 2 TB NVMe | 10 Gbps |
+| **Enterprise** | H100 (GPU) / Custom ASIC | 80 GB+ | 64 cores | 256 GB | 4 TB NVMe | 25 Gbps |
 
 ### 5.3 Deterministic Execution Requirements
 
@@ -513,14 +519,15 @@ To ensure verifiable computation:
 | **Fixed Precision** | FP32/FP16 with deterministic rounding |
 | **Ordered Operations** | Sequential kernel execution |
 | **Seed Control** | Fixed RNG seeds for stochastic operations |
-| **Version Pinning** | Locked CUDA/ROCm and library versions |
+| **Version Pinning** | Locked runtime and library versions (CUDA/ROCm/OpenCL/custom) |
 | **Memory Layout** | Deterministic tensor memory allocation |
+| **Hardware Abstraction** | Normalized scoring across GPU/TPU/CPU/FPGA/ASIC |
 
-### 5.4 Multi-GPU Farm Setup
+### 5.4 Multi-Accelerator Farm Setup
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    MULTI-GPU FARM TOPOLOGY                          │
+│                 MULTI-ACCELERATOR FARM TOPOLOGY                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │   ┌───────────────────────────────────────────────────────────┐    │
@@ -528,6 +535,7 @@ To ensure verifiable computation:
 │   │  • Load balancing across nodes                            │    │
 │   │  • Unified capacity reporting                             │    │
 │   │  • Centralized task distribution                          │    │
+│   │  • Hardware type detection and normalization              │    │
 │   └───────────────────────────┬───────────────────────────────┘    │
 │                               │                                     │
 │         ┌─────────────────────┼─────────────────────┐              │
@@ -535,11 +543,11 @@ To ensure verifiable computation:
 │         ▼                     ▼                     ▼              │
 │   ┌───────────┐         ┌───────────┐         ┌───────────┐       │
 │   │  Node 1   │         │  Node 2   │         │  Node 3   │       │
-│   │ 4× A100   │         │ 8× RTX4090│         │ 2× H100   │       │
-│   │ 320 GB    │         │ 192 GB    │         │ 160 GB    │       │
+│   │ 4× A100   │         │ 8× RTX4090│         │TPU v4 Pod │       │
+│   │ (GPU)     │         │ (GPU)     │         │ (TPU)     │       │
 │   └───────────┘         └───────────┘         └───────────┘       │
 │                                                                     │
-│   Total Farm Capacity: 672 GB VRAM, ~500 TFLOPS FP16               │
+│   Total Farm Capacity: Heterogeneous mix, normalized to work units │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -775,14 +783,14 @@ contract AIModel {
 
 | Resource | Unit | Base Cost | Notes |
 |----------|------|-----------|-------|
-| **GPU Time** | GPU-second | 1000 gas | Per GPU-second used |
-| **VRAM** | GB-second | 100 gas | Peak VRAM × time |
+| **Accelerator Time** | Compute-second | 1000 gas | Per accelerator-second used |
+| **Memory** | GB-second | 100 gas | Peak memory × time |
 | **Data Transfer** | MB | 10 gas | Input/output data |
 | **Verification** | Fixed | 500 gas | Per task verified |
 | **Priority** | Multiplier | 1-10x | Urgency premium |
 
 ```
-Total_Compute_Gas = (GPU_time × 1000) + (VRAM × 100) + (Data × 10) 
+Total_Compute_Gas = (Accelerator_time × 1000) + (Memory × 100) + (Data × 10) 
                     + 500 + (Base × Priority_multiplier)
 ```
 
@@ -1036,14 +1044,14 @@ Reputation = (0.4 × Success) + (0.25 × Timeliness) +
 │   PHASE 1: Foundation (Current)                                     │
 │   ─────────────────────────────                                     │
 │   ☑ Core PoUW protocol                                             │
-│   ☑ Basic GPU provider support                                     │
+│   ☑ Basic compute provider support (GPU-first)                     │
 │   ☑ Replicated verification                                        │
 │   ☐ Testnet deployment                                             │
 │                                                                     │
 │   PHASE 2: Maturity (6-12 months)                                  │
 │   ────────────────────────────────                                  │
 │   ☐ Production mainnet launch                                      │
-│   ☐ Multi-GPU farm support                                         │
+│   ☐ Multi-accelerator farm support (GPU/TPU/FPGA)                  │
 │   ☐ Advanced reputation system                                     │
 │   ☐ Price discovery mechanism                                      │
 │                                                                     │
@@ -1057,7 +1065,7 @@ Reputation = (0.4 × Success) + (0.25 × Timeliness) +
 │   PHASE 4: Ecosystem (24+ months)                                  │
 │   ───────────────────────────────                                   │
 │   ☐ Decentralized model training                                   │
-│   ☐ Peer-to-peer GPU scheduling                                    │
+│   ☐ Peer-to-peer compute scheduling (heterogeneous hardware)       │
 │   ☐ Developer SDKs                                                 │
 │   ☐ Enterprise integrations                                        │
 │                                                                     │
@@ -1113,14 +1121,14 @@ Reputation = (0.4 × Success) + (0.25 × Timeliness) +
 - **State Shards:** Isolated compute state per shard
 - **Cross-Shard:** Atomic task routing between shards
 
-### 10.5 Peer-to-Peer GPU Scheduling
+### 10.5 Peer-to-Peer Compute Scheduling
 
-**Vision:** Direct provider-to-provider task delegation.
+**Vision:** Direct provider-to-provider task delegation across heterogeneous hardware (GPU, TPU, CPU, FPGA, ASIC).
 
 ```
-User ──▶ Network ──▶ Provider A (overloaded) ──▶ Provider B (available)
+User ──▶ Network ──▶ Provider A (GPU, overloaded) ──▶ Provider B (TPU, available)
                               │
-                              └── P2P delegation with fee sharing
+                              └── P2P delegation with fee sharing (cross-hardware)
 ```
 
 ### 10.6 Marketplace APIs for Developers

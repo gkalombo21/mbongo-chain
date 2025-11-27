@@ -73,7 +73,7 @@ While Mbongo Chain maintains strict on-chain determinism, many real-world applic
 │                                                                                         │
 │   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
 │   │   COMPUTE PROOFS                                                                │  │
-│   │   • GPU execution results from off-chain compute                                │  │
+│   │   • Compute execution results from off-chain accelerators (GPU/TPU/CPU/FPGA/ASIC)│  │
 │   │   • AI/ML inference outputs                                                     │  │
 │   │   • Verification hashes for PoUW                                                │  │
 │   └─────────────────────────────────────────────────────────────────────────────────┘  │
@@ -220,7 +220,7 @@ The Mbongo oracle system defines three distinct roles with clear separation of r
 │   EXAMPLES                                                                              │
 │   ────────                                                                              │
 │   • Price feed aggregators (exchanges, DEXs)                                           │
-│   • Compute result providers (GPU farms)                                               │
+│   • Compute result providers (GPU/TPU/FPGA/ASIC farms, CPU clusters)                   │
 │   • Cross-chain bridges (external chain state)                                         │
 │   • API integrators (weather, sports, etc.)                                            │
 │                                                                                         │
@@ -1050,13 +1050,13 @@ The oracle layer plays a critical role in Mbongo's PoUW (Proof-of-Useful-Work) s
 │   │                                                                                 │  │
 │   │   • Task registered on-chain                                                    │  │
 │   │   • Task ID assigned                                                            │  │
-│   │   • GPU provider selected                                                       │  │
+│   │   • Compute provider selected (GPU/TPU/CPU/FPGA/ASIC)                           │  │
 │   └─────────────────────────────────────────────────────────────────────────────────┘  │
 │            │                                                                            │
 │            │  2. Task assignment                                                       │
 │            ▼                                                                            │
 │   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
-│   │                           GPU PROVIDER                                          │  │
+│   │                         COMPUTE PROVIDER                                        │  │
 │   │                                                                                 │  │
 │   │   • Execute compute task (off-chain)                                            │  │
 │   │   • Generate result hash                                                        │  │
@@ -1072,7 +1072,7 @@ The oracle layer plays a critical role in Mbongo's PoUW (Proof-of-Useful-Work) s
 │   │   │                      COMPUTE RECEIPT MESSAGE                              │ │  │
 │   │   │                                                                           │ │  │
 │   │   │   data_type:    COMPUTE_RECEIPT (0x0002)                                  │ │  │
-│   │   │   provider_id:  GPU provider identifier                                   │ │  │
+│   │   │   provider_id:  Compute provider identifier                               │ │  │
 │   │   │   payload:      {                                                         │ │  │
 │   │   │                   task_id: "...",                                         │ │  │
 │   │   │                   result_hash: "0x...",                                   │ │  │
@@ -1112,7 +1112,7 @@ The oracle layer plays a critical role in Mbongo's PoUW (Proof-of-Useful-Work) s
 │   ════════════════════                                                                  │
 │                                                                                         │
 │   1. REPLICATED COMPUTE                                                                 │
-│      • Multiple GPU providers execute same task                                        │
+│      • Multiple compute providers execute same task                                    │
 │      • Results must match (deterministic tasks)                                        │
 │      • Majority consensus on result hash                                               │
 │                                                                                         │
@@ -1148,7 +1148,7 @@ The oracle layer plays a critical role in Mbongo's PoUW (Proof-of-Useful-Work) s
 | Component | Source | Verification | Reward |
 |-----------|--------|--------------|--------|
 | **Compute Task** | User submission | On-chain validation | N/A |
-| **Compute Receipt** | GPU provider via oracle | Attester signatures | 50% of block reward |
+| **Compute Receipt** | Compute provider via oracle | Attester signatures | 50% of block reward |
 | **Receipt Validation** | Consensus layer | All validators | N/A |
 | **Reward Distribution** | Block finalization | Deterministic | To verified providers |
 
