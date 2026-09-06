@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use mbongo_core::{Address, Hash, Transaction, TransactionPayload};
+use mbongo_core::{Address, ComputeTask, Hash, Transaction, TransactionPayload};
 
 /// Errors returned by mempool operations.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -273,6 +273,20 @@ impl Mempool {
     #[must_use]
     pub fn contains_compute_task_id(&self, task_id: &[u8; 32]) -> bool {
         self.by_compute_task_id.contains_key(task_id)
+    }
+
+    /// Returns the pending `ComputeTask` deriving this `task_id`, if any.
+    ///
+    /// Admission uses it to mirror the same-block half of RFC 0005 rules
+    /// (q)–(s): a task pending ahead of a receipt will precede that receipt
+    /// in the block this node produces, since `order` is insertion order.
+    #[must_use]
+    pub fn pending_compute_task(&self, task_id: &[u8; 32]) -> Option<ComputeTask> {
+        let hash = self.by_compute_task_id.get(task_id)?;
+        match &self.by_hash.get(hash)?.payload {
+            TransactionPayload::ComputeTask(task) => Some((**task).clone()),
+            TransactionPayload::None | TransactionPayload::AnchorReceipt(_) => None,
+        }
     }
 
     /// Returns the number of transactions in the mempool.
