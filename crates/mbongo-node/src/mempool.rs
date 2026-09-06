@@ -19,13 +19,29 @@ pub enum MempoolError {
     /// into the same block, where RFC 0002 rule (j) rejects the block.
     #[error("duplicate pending task_id")]
     DuplicateTaskId,
+    /// A `ComputeTask` transaction committing this `task_id` is already
+    /// pending. Two pending commitments of one task would be drained
+    /// into the same block, where RFC 0005 rule (p) rejects the block.
+    #[error("duplicate pending compute task")]
+    DuplicateComputeTask,
 }
 
 /// Returns the receipt `task_id` carried by a transaction, if any.
 fn task_id_of(tx: &Transaction) -> Option<[u8; 32]> {
     match &tx.payload {
         TransactionPayload::AnchorReceipt(receipt) => Some(receipt.task_id),
-        TransactionPayload::None => None,
+        TransactionPayload::None | TransactionPayload::ComputeTask(_) => None,
+    }
+}
+
+/// Returns the derived `task_id` of the compute task a transaction
+/// commits, if any. A pending receipt and a pending task may share an id:
+/// they are different indexes on chain (RFC 0005 §4.1) and different
+/// indexes here.
+fn compute_task_id_of(tx: &Transaction) -> Option<[u8; 32]> {
+    match &tx.payload {
+        TransactionPayload::ComputeTask(task) => Some(task.task_id()),
+        TransactionPayload::None | TransactionPayload::AnchorReceipt(_) => None,
     }
 }
 
@@ -67,13 +83,15 @@ pub struct SenderPending {
 
 /// In-memory mempool with deterministic ordering.
 ///
-/// Maintains indexes by transaction hash, (sender, nonce), and — for
-/// `AnchorReceipt` transactions — receipt `task_id`, for deduplication.
-/// Order of insertion is preserved for block production.
+/// Maintains indexes by transaction hash, (sender, nonce), receipt
+/// `task_id` for `AnchorReceipt` transactions, and derived `task_id` for
+/// `ComputeTask` transactions, for deduplication. Order of insertion is
+/// preserved for block production.
 pub struct Mempool {
     by_hash: HashMap<Hash, Transaction>,
     by_sender_nonce: HashMap<(Address, u64), Hash>,
     by_task_id: HashMap<[u8; 32], Hash>,
+    by_compute_task_id: HashMap<[u8; 32], Hash>,
     /// Pending entry count per sender, maintained on every insertion and
     /// removal. `by_sender_nonce` is keyed by (sender, nonce), so counting
     /// one sender's entries from it would mean scanning the whole map;
@@ -90,6 +108,7 @@ impl Mempool {
             by_hash: HashMap::new(),
             by_sender_nonce: HashMap::new(),
             by_task_id: HashMap::new(),
+            by_compute_task_id: HashMap::new(),
             pending_by_sender: HashMap::new(),
             order: Vec::new(),
         }
@@ -103,6 +122,8 @@ impl Mempool {
     /// Returns [`MempoolError::DuplicateSenderNonce`] if (sender, nonce) is already pending.
     /// Returns [`MempoolError::DuplicateTaskId`] if an `AnchorReceipt` with
     /// the same `task_id` is already pending.
+    /// Returns [`MempoolError::DuplicateComputeTask`] if a `ComputeTask`
+    /// deriving the same `task_id` is already pending.
     pub fn insert(&mut self, tx_hash: Hash, tx: Transaction) -> Result<(), MempoolError> {
         if self.by_hash.contains_key(&tx_hash) {
             return Err(MempoolError::DuplicateHash);
@@ -117,12 +138,21 @@ impl Mempool {
                 return Err(MempoolError::DuplicateTaskId);
             }
         }
+        let compute_task_id = compute_task_id_of(&tx);
+        if let Some(tid) = &compute_task_id {
+            if self.by_compute_task_id.contains_key(tid) {
+                return Err(MempoolError::DuplicateComputeTask);
+            }
+        }
 
         let sender = tx.sender;
         self.by_hash.insert(tx_hash, tx);
         self.by_sender_nonce.insert(key, tx_hash);
         if let Some(tid) = task_id {
             self.by_task_id.insert(tid, tx_hash);
+        }
+        if let Some(tid) = compute_task_id {
+            self.by_compute_task_id.insert(tid, tx_hash);
         }
         *self.pending_by_sender.entry(sender).or_insert(0) += 1;
         self.order.push(tx_hash);
@@ -186,6 +216,9 @@ impl Mempool {
         if let Some(tid) = task_id_of(&tx) {
             self.by_task_id.remove(&tid);
         }
+        if let Some(tid) = compute_task_id_of(&tx) {
+            self.by_compute_task_id.remove(&tid);
+        }
         if let Some(count) = self.pending_by_sender.get_mut(&tx.sender) {
             *count -= 1;
             if *count == 0 {
@@ -234,6 +267,12 @@ impl Mempool {
     #[must_use]
     pub fn contains_task_id(&self, task_id: &[u8; 32]) -> bool {
         self.by_task_id.contains_key(task_id)
+    }
+
+    /// Returns true if a `ComputeTask` deriving this `task_id` is pending.
+    #[must_use]
+    pub fn contains_compute_task_id(&self, task_id: &[u8; 32]) -> bool {
+        self.by_compute_task_id.contains_key(task_id)
     }
 
     /// Returns the number of transactions in the mempool.
@@ -629,5 +668,87 @@ mod tests {
         pool.remove(&h1);
         assert!(!pool.contains_task_id(&task_id));
         assert_eq!(pool.len(), 0);
+    }
+
+    // ── RFC 0005: pending ComputeTask index ───────────────────────────
+
+    /// Builds a `ComputeTask` transaction with the given salt from
+    /// `sender`. Signatures are irrelevant to mempool indexing tests.
+    fn make_task_tx(
+        sender: u8,
+        nonce: u64,
+        hash_byte: u8,
+        salt: [u8; 32],
+    ) -> (Hash, Transaction, [u8; 32]) {
+        let task = mbongo_core::ComputeTask {
+            version: 1,
+            submitter: Address([sender; 32]),
+            executor: Address([0xE0u8; 32]),
+            salt,
+            input_commitment: [0x1Cu8; 32],
+            execution_spec: vec![1, 2, 3],
+        };
+        let task_id = task.task_id();
+        let tx = Transaction {
+            tx_type: TransactionType::ComputeTask,
+            sender: Address([sender; 32]),
+            receiver: Address::zero(),
+            amount: 0,
+            nonce,
+            payload: TransactionPayload::ComputeTask(Box::new(task)),
+            signature: [0u8; 64],
+        };
+        (Hash([hash_byte; 32]), tx, task_id)
+    }
+
+    #[test]
+    fn mempool_duplicate_compute_task_rejected() {
+        let mut pool = Mempool::new();
+        let (h1, tx1, task_id) = make_task_tx(1, 0, 30, [0x5Au8; 32]);
+        pool.insert(h1, tx1).unwrap();
+        assert!(pool.contains_compute_task_id(&task_id));
+        // The receipt index is a different keyspace.
+        assert!(!pool.contains_task_id(&task_id));
+
+        // Same envelope under a different nonce and hash derives the same
+        // task_id (the nonce is not in the envelope) → rejected.
+        let (h2, tx2, same_id) = make_task_tx(1, 1, 31, [0x5Au8; 32]);
+        assert_eq!(same_id, task_id);
+        let err = pool.insert(h2, tx2).unwrap_err();
+        assert!(matches!(err, MempoolError::DuplicateComputeTask));
+        assert_eq!(pool.len(), 1);
+
+        // A different salt is a different task and is admitted.
+        let (h3, tx3, other_id) = make_task_tx(1, 1, 32, [0x5Bu8; 32]);
+        assert_ne!(other_id, task_id);
+        pool.insert(h3, tx3).unwrap();
+        assert_eq!(pool.len(), 2);
+    }
+
+    #[test]
+    fn mempool_task_and_receipt_may_share_an_id() {
+        // A task and a receipt for that task may be pending together:
+        // RFC 0005 lets the receipt follow the task in the same block.
+        let mut pool = Mempool::new();
+        let (h1, tx1, task_id) = make_task_tx(1, 0, 33, [0x5Cu8; 32]);
+        pool.insert(h1, tx1).unwrap();
+        let (h2, tx2) = make_anchor_tx(2, 0, 34, task_id);
+        pool.insert(h2, tx2).unwrap();
+        assert!(pool.contains_compute_task_id(&task_id));
+        assert!(pool.contains_task_id(&task_id));
+        assert_eq!(pool.len(), 2);
+    }
+
+    #[test]
+    fn mempool_remove_clears_compute_task_index() {
+        let mut pool = Mempool::new();
+        let (h1, tx1, task_id) = make_task_tx(1, 0, 35, [0x5Du8; 32]);
+        pool.insert(h1, tx1).unwrap();
+        pool.remove_included(&[h1]);
+        assert!(!pool.contains_compute_task_id(&task_id));
+        assert_eq!(pool.len(), 0);
+        // The id is free again.
+        let (h2, tx2, _) = make_task_tx(1, 0, 36, [0x5Du8; 32]);
+        pool.insert(h2, tx2).unwrap();
     }
 }

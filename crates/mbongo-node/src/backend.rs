@@ -10,8 +10,9 @@ use mbongo_api::rest::{
     Transaction as RestTransaction, Validator,
 };
 use mbongo_core::{
-    compute_transactions_root, Account, Address, Block, BlockBody, BlockHeader, Hash, Receipt,
-    Transaction, TransactionPayload, TransactionType,
+    compute_transactions_root, Account, Address, Block, BlockBody, BlockHeader, ComputeTask, Hash,
+    Receipt, Transaction, TransactionPayload, TransactionType, COMPUTE_TASK_VERSION,
+    MAX_EXECUTION_SPEC_BYTES,
 };
 use mbongo_network::rpc::{BackendError, RpcBackend};
 use mbongo_network::BlockBroadcaster;
@@ -83,18 +84,86 @@ impl<S: Storage> ReceiptIndex for CompositeReceiptIndex<'_, S> {
     }
 }
 
-/// Rule (a) of RFC 0002 §2: the payload variant must match the transaction
-/// type. Returns the embedded receipt for `AnchorReceipt` transactions,
-/// `None` for well-formed non-anchor transactions, or an error on mismatch.
-fn check_type_payload(tx: &Transaction) -> Result<Option<&Receipt>, ()> {
+/// The consensus-relevant payload a transaction carries once rule (a) of
+/// RFC 0002 §2 and rule (k) of RFC 0005 §3 hold: the payload variant
+/// matches the transaction type.
+#[derive(Clone, Copy)]
+enum TypedPayload<'a> {
+    /// `Transfer` or `Stake` with no payload: the v0.2 transfer path.
+    Plain,
+    /// `AnchorReceipt` carrying its receipt.
+    Anchor(&'a Receipt),
+    /// `ComputeTask` carrying its task envelope.
+    Task(&'a ComputeTask),
+}
+
+/// Rule (a) of RFC 0002 §2 and rule (k) of RFC 0005 §3: the payload
+/// variant must match the transaction type. `AnchorReceipt` ⟺ anchor
+/// payload, `ComputeTask` ⟺ task payload, `Transfer` and `Stake` ⟺ `None`.
+///
+/// The legacy `(ComputeTask, None)` form, which v0.3 executed as a plain
+/// transfer, is rejected here (RFC 0005 §5.1). Every pairing is listed so
+/// a future variant cannot slip through a wildcard.
+fn check_type_payload(tx: &Transaction) -> Result<TypedPayload<'_>, ()> {
     match (tx.tx_type, &tx.payload) {
         (TransactionType::AnchorReceipt, TransactionPayload::AnchorReceipt(receipt)) => {
-            Ok(Some(receipt))
+            Ok(TypedPayload::Anchor(receipt))
         }
-        (TransactionType::AnchorReceipt, TransactionPayload::None)
-        | (_, TransactionPayload::AnchorReceipt(_)) => Err(()),
-        (_, TransactionPayload::None) => Ok(None),
+        (TransactionType::ComputeTask, TransactionPayload::ComputeTask(task)) => {
+            Ok(TypedPayload::Task(task))
+        }
+        (TransactionType::Transfer | TransactionType::Stake, TransactionPayload::None) => {
+            Ok(TypedPayload::Plain)
+        }
+        (
+            TransactionType::AnchorReceipt | TransactionType::ComputeTask,
+            TransactionPayload::None,
+        )
+        | (
+            TransactionType::Transfer | TransactionType::Stake | TransactionType::ComputeTask,
+            TransactionPayload::AnchorReceipt(_),
+        )
+        | (
+            TransactionType::Transfer | TransactionType::Stake | TransactionType::AnchorReceipt,
+            TransactionPayload::ComputeTask(_),
+        ) => Err(()),
     }
+}
+
+/// Why a `ComputeTask` envelope failed one of rules (m)–(o) of RFC 0005 §3.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TaskRuleViolation {
+    /// `task.version != 1` (rule m).
+    Version,
+    /// `task.execution_spec.len() > MAX_EXECUTION_SPEC_BYTES` (rule n).
+    SpecTooLarge,
+    /// `task.submitter != tx.sender` (rule o).
+    SubmitterMismatch,
+}
+
+/// Rules (m)–(o) of RFC 0005 §3 on a `ComputeTask` envelope, in normative
+/// order. On success returns the derived `task_id`, computed only once
+/// rule (n) has held, so the hashed preimage is bounded by
+/// `MAX_TASK_ID_PREIMAGE_BYTES`. Shared by consensus and admission so the
+/// two cannot diverge.
+///
+/// Consensus never inspects `input_commitment` or `execution_spec` beyond
+/// this: the commitment is compared for equality later (rule r, not part
+/// of this gate) and the specification is opaque bytes (§2.12).
+fn check_task_envelope(
+    tx: &Transaction,
+    task: &ComputeTask,
+) -> Result<[u8; 32], TaskRuleViolation> {
+    if task.version != COMPUTE_TASK_VERSION {
+        return Err(TaskRuleViolation::Version);
+    }
+    if task.execution_spec.len() > MAX_EXECUTION_SPEC_BYTES {
+        return Err(TaskRuleViolation::SpecTooLarge);
+    }
+    if task.submitter != tx.sender {
+        return Err(TaskRuleViolation::SubmitterMismatch);
+    }
+    Ok(task.task_id())
 }
 
 /// Node backend backed by a [`Storage`] implementation.
@@ -279,18 +348,33 @@ impl<S: Storage> NodeBackend<S> {
         let mut pending_task_ids: std::collections::HashSet<[u8; 32]> =
             std::collections::HashSet::new();
 
+        // Transient set of task_ids committed by ComputeTask transactions
+        // earlier in THIS block (RFC 0005 rule p, same-block half). A
+        // separate set from the receipts above: a task and its receipt
+        // may legitimately share one id within a block.
+        let mut pending_tasks: std::collections::HashSet<[u8; 32]> =
+            std::collections::HashSet::new();
+
         for (i, tx) in block.body.transactions.iter().enumerate() {
-            // (a) Type/form (RFC 0002 §2): AnchorReceipt requires an
-            // AnchorReceipt payload; every other type requires None.
-            let Ok(anchor_receipt) = check_type_payload(tx) else {
+            // (a)/(k) Type/form (RFC 0002 §2, RFC 0005 §3): AnchorReceipt
+            // requires an AnchorReceipt payload, ComputeTask a ComputeTask
+            // payload; every other type requires None.
+            let Ok(typed) = check_type_payload(tx) else {
                 return Err(ApplyBlockError::TypePayloadMismatch(i));
             };
 
-            // (b) Anchoring field constraints: unused fields are pinned to
-            // canonical values so two encodings of the same anchoring
-            // cannot differ.
-            if anchor_receipt.is_some() && (tx.amount != 0 || tx.receiver != Address::zero()) {
-                return Err(ApplyBlockError::AnchorFieldConstraint(i));
+            // (b)/(l) Field constraints: unused fields are pinned to
+            // canonical values so two encodings of the same anchoring or
+            // task commitment cannot differ, and neither can move money.
+            let canonical_fields = tx.amount == 0 && tx.receiver == Address::zero();
+            match typed {
+                TypedPayload::Anchor(_) if !canonical_fields => {
+                    return Err(ApplyBlockError::AnchorFieldConstraint(i));
+                }
+                TypedPayload::Task(_) if !canonical_fields => {
+                    return Err(ApplyBlockError::TaskFieldConstraint(i));
+                }
+                TypedPayload::Plain | TypedPayload::Anchor(_) | TypedPayload::Task(_) => {}
             }
 
             // (c) Transaction signature.
@@ -300,25 +384,85 @@ impl<S: Storage> NodeBackend<S> {
 
             let tx_hash = compute_tx_hash(tx);
 
-            // Already-stored transaction handling. For non-anchor types
-            // this is the v0.2 idempotent skip (unchanged this phase).
-            // An AnchorReceipt must NOT take the skip path: a stored
-            // anchor transaction implies its receipt is anchored (both
-            // commit in one atomic batch), so re-including it — even
-            // byte-identically — violates global task_id uniqueness and
-            // is rejected with the same verdict rule (i) would produce.
+            // Already-stored transaction handling. For plain types this is
+            // the v0.2 idempotent skip (unchanged). An AnchorReceipt must
+            // NOT take the skip path: a stored anchor transaction implies
+            // its receipt is anchored (both commit in one atomic batch), so
+            // re-including it — even byte-identically — violates global
+            // task_id uniqueness and is rejected with the same verdict rule
+            // (i) would produce. A stored ComputeTask transaction likewise
+            // implies its task is registered, and rule (p) gives the same
+            // verdict.
             let already_stored = storage
                 .get_transaction(&tx_hash)
                 .map_err(|e| ApplyBlockError::Storage(e.to_string()))?
                 .is_some();
             if already_stored {
-                if anchor_receipt.is_some() {
-                    return Err(ApplyBlockError::TaskIdAlreadyAnchored(i));
+                match typed {
+                    TypedPayload::Anchor(_) => {
+                        return Err(ApplyBlockError::TaskIdAlreadyAnchored(i));
+                    }
+                    TypedPayload::Task(_) => {
+                        return Err(ApplyBlockError::TaskAlreadyRegistered(i));
+                    }
+                    TypedPayload::Plain => continue,
                 }
-                continue;
             }
 
-            if let Some(receipt) = anchor_receipt {
+            if let TypedPayload::Task(task) = typed {
+                // ── ComputeTask path (RFC 0005 §3 rules m–p, with the
+                // generic nonce rule d in its v0.3 position) ────────────
+                // (d) Nonce: the sender account must exist and the nonce
+                // must match; the nonce is consumed. No balance movement
+                // (§2.8: a task commitment is not a transfer).
+                let sender_addr = tx.sender;
+                let mut sender = match account_cache.get(&sender_addr) {
+                    Some(acc) => acc.clone(),
+                    None => storage
+                        .get_account(&sender_addr)
+                        .map_err(|e| ApplyBlockError::Storage(e.to_string()))?
+                        .ok_or(ApplyBlockError::SenderAccountMissing(i))?,
+                };
+                sender
+                    .validate_and_increment_nonce(tx.nonce)
+                    .map_err(|_| ApplyBlockError::InvalidNonce(i))?;
+
+                // (m) version, (n) bound, (o) submitter identity, in that
+                // order; the task_id is derived only once the bound holds.
+                let task_id = check_task_envelope(tx, task).map_err(|why| match why {
+                    TaskRuleViolation::Version => ApplyBlockError::TaskVersionUnsupported(i),
+                    TaskRuleViolation::SpecTooLarge => ApplyBlockError::ExecutionSpecTooLarge(i),
+                    TaskRuleViolation::SubmitterMismatch => {
+                        ApplyBlockError::SenderSubmitterMismatch(i)
+                    }
+                })?;
+
+                // (p) Uniqueness: prior chain state first, then tasks
+                // committed earlier in this block. First-registered-wins;
+                // the task_id is content-derived, so a byte-identical
+                // envelope under a fresh nonce is the same task (§2.6).
+                if storage
+                    .has_task(&task_id)
+                    .map_err(|e| ApplyBlockError::Storage(e.to_string()))?
+                {
+                    return Err(ApplyBlockError::TaskAlreadyRegistered(i));
+                }
+                if pending_tasks.contains(&task_id) {
+                    return Err(ApplyBlockError::TaskRepeatedInBlock(i));
+                }
+                pending_tasks.insert(task_id);
+
+                // Effects: accumulated only; committed in the final atomic
+                // batch. The stored task is its canonical SCALE encoding,
+                // keyed by task_id, and storage never decodes it (§4). No
+                // status is written: "submitted" is the presence of this
+                // key (§4.1).
+                last_seq += 1;
+                ops.push(BatchOp::PutTransaction(tx_hash, tx.clone()));
+                ops.push(BatchOp::PutTxSeqIndex(last_seq, tx_hash));
+                ops.push(BatchOp::PutTask(task_id, task.encode()));
+                account_cache.insert(sender_addr, sender);
+            } else if let TypedPayload::Anchor(receipt) = typed {
                 // ── AnchorReceipt path (RFC 0002 §2 rules d–j) ──────────
                 // (d) Nonce: the sender account must exist and the nonce
                 // must match; the nonce is consumed. No balance movement.
@@ -381,9 +525,10 @@ impl<S: Storage> NodeBackend<S> {
                 ops.push(BatchOp::PutReceipt(receipt.task_id, receipt.encode()));
                 account_cache.insert(sender_addr, sender);
             } else {
-                // ── Transfer path: unchanged v0.2 semantics. ComputeTask
-                // and Stake deliberately still fall through here (RFC 0002
-                // Non-Goals). ───────────────────────────────────────────
+                // ── Transfer path: unchanged v0.2 semantics. Stake
+                // deliberately still falls through here (RFC 0002
+                // Non-Goals); the ComputeTask fall-through ended with
+                // RFC 0005 §5.1 and is rejected by rule (k) above. ──────
 
                 // Load sender (from cache or storage).
                 let sender_addr = tx.sender;
@@ -525,9 +670,10 @@ pub enum ApplyBlockError {
     /// A transaction in the block has an invalid signature (rule c).
     #[error("invalid transaction signature at index {0}")]
     InvalidSignature(usize),
-    /// The sender account of an `AnchorReceipt` transaction does not exist
-    /// (rule d: the nonce rule requires an existing account).
-    #[error("anchor receipt sender account missing at index {0}")]
+    /// The sender account of an `AnchorReceipt` or `ComputeTask`
+    /// transaction does not exist (rule d: the nonce rule requires an
+    /// existing account).
+    #[error("sender account missing at index {0}")]
     SenderAccountMissing(usize),
     /// A transaction has an invalid nonce (rule d).
     #[error("invalid nonce at index {0}")]
@@ -554,6 +700,28 @@ pub enum ApplyBlockError {
     /// block (rule j).
     #[error("task_id repeated within block at index {0}")]
     TaskIdRepeatedInBlock(usize),
+    /// A `ComputeTask` transaction has a non-zero amount or a non-zero
+    /// receiver (RFC 0005 rule l).
+    #[error("compute task requires amount 0 and zero receiver at index {0}")]
+    TaskFieldConstraint(usize),
+    /// The task envelope version is not supported (RFC 0005 rule m).
+    #[error("unsupported compute task version at index {0}")]
+    TaskVersionUnsupported(usize),
+    /// `task.execution_spec` exceeds `MAX_EXECUTION_SPEC_BYTES` (RFC 0005
+    /// rule n).
+    #[error("compute task execution_spec too large at index {0}")]
+    ExecutionSpecTooLarge(usize),
+    /// The transaction sender is not the task submitter (RFC 0005 rule o).
+    #[error("sender must equal task submitter at index {0}")]
+    SenderSubmitterMismatch(usize),
+    /// A task with this task_id exists in prior chain state (RFC 0005
+    /// rule p, prior-state half).
+    #[error("task_id already registered at index {0}")]
+    TaskAlreadyRegistered(usize),
+    /// A task with this task_id was committed by an earlier transaction in
+    /// the same block (RFC 0005 rule p, same-block half).
+    #[error("compute task repeated within block at index {0}")]
+    TaskRepeatedInBlock(usize),
     /// Storage error.
     #[error("storage error: {0}")]
     Storage(String),
@@ -608,33 +776,49 @@ impl<S: Storage + Send + Sync + 'static> RpcBackend for NodeBackend<S> {
         let mempool = Arc::clone(&self.mempool);
         async move {
             // ── Admission checks mirroring apply_block's normative order
-            // (RFC 0002 §2). Admission is best-effort: consensus in
-            // apply_block stays authoritative, and nothing here mutates
-            // storage. ─────────────────────────────────────────────────
+            // (RFC 0002 §2, RFC 0005 §3). Admission is best-effort:
+            // consensus in apply_block stays authoritative, and nothing
+            // here mutates storage. ────────────────────────────────────
 
-            // (a) Type/form.
-            let Ok(anchor_receipt) = check_type_payload(&tx) else {
+            // (a)/(k) Type/form.
+            let Ok(typed) = check_type_payload(&tx) else {
                 return Err(BackendError::Internal(
                     "payload does not match transaction type".to_string(),
                 ));
             };
-            // (b) Anchoring field constraints.
-            if anchor_receipt.is_some() && (tx.amount != 0 || tx.receiver != Address::zero()) {
-                return Err(BackendError::Internal(
-                    "anchor receipt requires amount 0 and zero receiver".to_string(),
-                ));
-            }
-            // Copy what the anchor checks below need so the borrow of `tx`
-            // ends before it is moved into the mempool.
-            let anchor = anchor_receipt.map(|r| (r.clone(), r.task_id));
+            // (b)/(l) Field constraints. Copy what the checks below need
+            // so the borrow of `tx` ends before it is moved into the
+            // mempool. The task envelope verdict is computed here (a pure
+            // function of the transaction) but acted on later, in the
+            // position apply_block gives rules (m)–(o).
+            let canonical_fields = tx.amount == 0 && tx.receiver == Address::zero();
+            let (anchor, task_check) = match typed {
+                TypedPayload::Anchor(receipt) => {
+                    if !canonical_fields {
+                        return Err(BackendError::Internal(
+                            "anchor receipt requires amount 0 and zero receiver".to_string(),
+                        ));
+                    }
+                    (Some((receipt.clone(), receipt.task_id)), None)
+                }
+                TypedPayload::Task(task) => {
+                    if !canonical_fields {
+                        return Err(BackendError::Internal(
+                            "compute task requires amount 0 and zero receiver".to_string(),
+                        ));
+                    }
+                    (None, Some(check_task_envelope(&tx, task)))
+                }
+                TypedPayload::Plain => (None, None),
+            };
 
             let tx_hash = compute_tx_hash(&tx);
 
-            // Already-included transaction handling. Non-anchor types keep
-            // the idempotent success (return the hash). Re-submitting an
-            // anchored AnchorReceipt — even byte-identically — is a
-            // duplicate anchoring attempt and is rejected, mirroring
-            // apply_block's stored-anchor rejection.
+            // Already-included transaction handling. Plain types keep the
+            // idempotent success (return the hash). Re-submitting an
+            // anchored AnchorReceipt or a registered ComputeTask — even
+            // byte-identically — is a duplicate attempt and is rejected,
+            // mirroring apply_block's stored-transaction rules.
             if storage
                 .get_transaction(&tx_hash)
                 .map_err(|_| BackendError::Internal("storage error".to_string()))?
@@ -643,6 +827,11 @@ impl<S: Storage + Send + Sync + 'static> RpcBackend for NodeBackend<S> {
                 if anchor.is_some() {
                     return Err(BackendError::Internal(
                         "task_id already anchored".to_string(),
+                    ));
+                }
+                if task_check.is_some() {
+                    return Err(BackendError::Internal(
+                        "task_id already registered".to_string(),
                     ));
                 }
                 return Ok(tx_hash.to_string());
@@ -755,6 +944,46 @@ impl<S: Storage + Send + Sync + 'static> RpcBackend for NodeBackend<S> {
                 }
             }
 
+            // Task-specific admission (rules m–p; RFC 0005 §3).
+            if let Some(check) = task_check {
+                let task_id = match check {
+                    Ok(task_id) => task_id,
+                    Err(TaskRuleViolation::Version) => {
+                        return Err(BackendError::Internal(
+                            "unsupported compute task version".to_string(),
+                        ));
+                    }
+                    Err(TaskRuleViolation::SpecTooLarge) => {
+                        return Err(BackendError::Internal(
+                            "compute task execution_spec too large".to_string(),
+                        ));
+                    }
+                    Err(TaskRuleViolation::SubmitterMismatch) => {
+                        return Err(BackendError::Internal(
+                            "sender must equal task submitter".to_string(),
+                        ));
+                    }
+                };
+                // (p) Already registered in persistent state (read-only).
+                if storage
+                    .has_task(&task_id)
+                    .map_err(|_| BackendError::Internal("storage error".to_string()))?
+                {
+                    return Err(BackendError::Internal(
+                        "task_id already registered".to_string(),
+                    ));
+                }
+                // Mempool-pending duplicate guard, the task counterpart of
+                // the receipt guard below: two pending commitments of one
+                // task would be drained into the same block and rule (p)
+                // would reject the whole block.
+                if pool.contains_compute_task_id(&task_id) {
+                    return Err(BackendError::Internal(
+                        "compute task already pending".to_string(),
+                    ));
+                }
+            }
+
             // Mempool-pending duplicate task_id guard: without it, two
             // pending receipts for one task_id would be drained into the
             // same block and rule (j) would reject the whole block.
@@ -774,6 +1003,9 @@ impl<S: Storage + Send + Sync + 'static> RpcBackend for NodeBackend<S> {
                 }
                 MempoolError::DuplicateTaskId => {
                     BackendError::Internal("task_id already pending".to_string())
+                }
+                MempoolError::DuplicateComputeTask => {
+                    BackendError::Internal("compute task already pending".to_string())
                 }
             })?;
 
@@ -1984,7 +2216,7 @@ mod tests {
         let anchor = valid_anchor_tx(&sk, 0, task_id);
         let anchor_bytes = match &anchor.payload {
             TransactionPayload::AnchorReceipt(r) => r.encode(),
-            TransactionPayload::None => unreachable!(),
+            TransactionPayload::None | TransactionPayload::ComputeTask(_) => unreachable!(),
         };
         let block = build_valid_block(&backend, vec![anchor.clone()]);
         backend.apply_block(&block).unwrap();
@@ -3871,5 +4103,735 @@ mod tests {
         let follower_tip =
             compute_block_hash(&follower.storage.get_block_by_height(5).unwrap().unwrap());
         assert_eq!(follower_tip, producer_tip_at_5);
+    }
+
+    // ── RFC 0005: ComputeTask commitment, rules (k)–(p) ───────────────
+
+    use mbongo_core::{ComputeTask, COMPUTE_TASK_VERSION, MAX_EXECUTION_SPEC_BYTES};
+    use parity_scale_codec::Decode;
+
+    /// A well-formed envelope naming `executor`, committed by `submitter`.
+    fn task_for(
+        submitter: Address,
+        executor: Address,
+        salt: [u8; 32],
+        execution_spec: Vec<u8>,
+    ) -> ComputeTask {
+        ComputeTask {
+            version: COMPUTE_TASK_VERSION,
+            submitter,
+            executor,
+            salt,
+            input_commitment: [0x1Cu8; 32],
+            execution_spec,
+        }
+    }
+
+    /// Wraps a task in a canonically formed `ComputeTask` transaction
+    /// (amount 0, zero receiver) signed by `sk`.
+    fn signed_task_tx(sk: &SigningKey, nonce: u64, task: ComputeTask) -> Transaction {
+        let sender = Address(sk.verifying_key().to_bytes());
+        let mut tx = Transaction {
+            tx_type: TransactionType::ComputeTask,
+            sender,
+            receiver: Address::zero(),
+            amount: 0,
+            nonce,
+            payload: TransactionPayload::ComputeTask(Box::new(task)),
+            signature: [0u8; 64],
+        };
+        tx.signature = sk.sign(&tx.signing_payload()).to_bytes();
+        tx
+    }
+
+    /// The executor every valid test task names: a second key, so that
+    /// submitter and executor are visibly different parties.
+    fn executor_key() -> SigningKey {
+        SigningKey::from_bytes(&[0xE1u8; 32])
+    }
+
+    fn executor_addr() -> Address {
+        Address(executor_key().verifying_key().to_bytes())
+    }
+
+    /// Fully valid task transaction: submitter == sender, canonical
+    /// fields, valid signature, three-byte specification.
+    fn valid_task_tx(sk: &SigningKey, nonce: u64, salt: [u8; 32]) -> Transaction {
+        let submitter = Address(sk.verifying_key().to_bytes());
+        signed_task_tx(
+            sk,
+            nonce,
+            task_for(submitter, executor_addr(), salt, vec![1, 2, 3]),
+        )
+    }
+
+    fn task_of(tx: &Transaction) -> &ComputeTask {
+        match &tx.payload {
+            TransactionPayload::ComputeTask(task) => task,
+            TransactionPayload::None | TransactionPayload::AnchorReceipt(_) => {
+                panic!("expected a ComputeTask payload")
+            }
+        }
+    }
+
+    /// Re-signs a transaction after a field was changed, so that the only
+    /// rule under test is the one the change targets.
+    fn resign(sk: &SigningKey, tx: &mut Transaction) {
+        tx.signature = sk.sign(&tx.signing_payload()).to_bytes();
+    }
+
+    /// Asserts the chain is exactly the post-genesis state for `sk`:
+    /// height 0, nonce 0, balance untouched, no task, no sequence.
+    fn assert_untouched(
+        backend: &NodeBackend<InMemoryStorage>,
+        sk: &SigningKey,
+        task_id: &[u8; 32],
+    ) {
+        let addr = Address(sk.verifying_key().to_bytes());
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 0);
+        let acc = backend.storage.get_account(&addr).unwrap().unwrap();
+        assert_eq!(acc.nonce, 0);
+        assert_eq!(acc.balance, 5000);
+        assert!(!backend.storage.has_task(task_id).unwrap());
+        assert_eq!(backend.storage.get_last_included_tx_seq().unwrap(), 0);
+    }
+
+    #[test]
+    fn compute_task_valid_block_registers_task() {
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let sender = fund(&backend, &sk, 5000);
+
+        let tx = valid_task_tx(&sk, 0, [0x01u8; 32]);
+        let task = task_of(&tx).clone();
+        let task_id = task.task_id();
+        let tx_hash = compute_tx_hash(&tx);
+
+        let block = build_valid_block(&backend, vec![tx]);
+        backend.apply_block(&block).unwrap();
+
+        // Submitted state is the presence of the key (RFC 0005 §4.1); the
+        // stored bytes are the canonical SCALE encoding and nothing else.
+        assert!(backend.storage.has_task(&task_id).unwrap());
+        assert_eq!(
+            backend.storage.get_task(&task_id).unwrap(),
+            Some(task.encode())
+        );
+        // No receipt appeared: the two derived states are separate.
+        assert!(!backend.storage.has_receipt(&task_id).unwrap());
+        // Nonce consumed, no money moved, transaction and sequence stored.
+        let acc = backend.storage.get_account(&sender).unwrap().unwrap();
+        assert_eq!(acc.nonce, 1);
+        assert_eq!(acc.balance, 5000);
+        assert!(backend.storage.get_transaction(&tx_hash).unwrap().is_some());
+        assert_eq!(backend.storage.get_last_included_tx_seq().unwrap(), 1);
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 1);
+    }
+
+    #[test]
+    fn compute_task_repeated_work_needs_a_new_salt() {
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+
+        // Same submitter, executor, input and specification: only the
+        // salt differs, and that is exactly how a client repeats work.
+        let a = valid_task_tx(&sk, 0, [0x01u8; 32]);
+        let b = valid_task_tx(&sk, 1, [0x02u8; 32]);
+        let (id_a, id_b) = (task_of(&a).task_id(), task_of(&b).task_id());
+        assert_ne!(id_a, id_b);
+
+        let block = build_valid_block(&backend, vec![a, b]);
+        backend.apply_block(&block).unwrap();
+        assert!(backend.storage.has_task(&id_a).unwrap());
+        assert!(backend.storage.has_task(&id_b).unwrap());
+        assert_eq!(backend.storage.get_last_included_tx_seq().unwrap(), 2);
+    }
+
+    #[test]
+    fn compute_task_different_executor_is_a_different_task() {
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let submitter = fund(&backend, &sk, 5000);
+
+        // Identical envelope except the executor: a client may ask two
+        // executors for the same work (RFC 0005 §2.6), and neither
+        // registration collides with the other.
+        let for_e1 = signed_task_tx(
+            &sk,
+            0,
+            task_for(submitter, executor_addr(), [0x03u8; 32], vec![9]),
+        );
+        let for_e2 = signed_task_tx(
+            &sk,
+            1,
+            task_for(submitter, Address([0xE2u8; 32]), [0x03u8; 32], vec![9]),
+        );
+        let (id_1, id_2) = (task_of(&for_e1).task_id(), task_of(&for_e2).task_id());
+        assert_ne!(id_1, id_2, "changing the executor must change task_id");
+
+        let block = build_valid_block(&backend, vec![for_e1, for_e2]);
+        backend.apply_block(&block).unwrap();
+        assert!(backend.storage.has_task(&id_1).unwrap());
+        assert!(backend.storage.has_task(&id_2).unwrap());
+
+        // The stored envelopes name their executors: nothing on chain can
+        // later change who may answer either task.
+        let stored =
+            ComputeTask::decode(&mut backend.storage.get_task(&id_1).unwrap().unwrap().as_slice())
+                .unwrap();
+        assert_eq!(stored.executor, executor_addr());
+    }
+
+    #[test]
+    fn compute_task_type_payload_pairings_rejected() {
+        // Rule (k): ComputeTask ⟺ ComputeTask payload, and no other type
+        // carries that payload.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let sender = fund(&backend, &sk, 5000);
+        let task = task_of(&valid_task_tx(&sk, 0, [0x04u8; 32])).clone();
+
+        // The legacy v0.3 fall-through: ComputeTask type, None payload.
+        // Before RFC 0005 this executed as a transfer of `amount`.
+        let mut legacy = signed_transfer(&sk, Address([9u8; 32]), 100, 0);
+        legacy.tx_type = TransactionType::ComputeTask;
+        resign(&sk, &mut legacy);
+        let block = build_valid_block(&backend, vec![legacy]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TypePayloadMismatch(0))
+        ));
+        // ...and it no longer moves money.
+        assert_eq!(
+            backend.storage.get_account(&sender).unwrap().unwrap().balance,
+            5000
+        );
+
+        // Every other type carrying a task payload.
+        for tx_type in [
+            TransactionType::Transfer,
+            TransactionType::Stake,
+            TransactionType::AnchorReceipt,
+        ] {
+            let mut tx = signed_task_tx(&sk, 0, task.clone());
+            tx.tx_type = tx_type;
+            resign(&sk, &mut tx);
+            let block = build_valid_block(&backend, vec![tx]);
+            assert!(
+                matches!(
+                    backend.apply_block(&block),
+                    Err(ApplyBlockError::TypePayloadMismatch(0))
+                ),
+                "{tx_type:?} must not carry a ComputeTask payload"
+            );
+        }
+
+        // ComputeTask type carrying a receipt payload.
+        let receipt = signed_receipt_for(&sk, [0x05u8; 32], vec![], 1);
+        let mut tx = signed_task_tx(&sk, 0, task.clone());
+        tx.payload = TransactionPayload::AnchorReceipt(Box::new(receipt));
+        resign(&sk, &mut tx);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TypePayloadMismatch(0))
+        ));
+        assert_untouched(&backend, &sk, &task.task_id());
+    }
+
+    #[test]
+    fn compute_task_field_constraints_rejected() {
+        // Rule (l): amount == 0 and receiver == zero are consensus rules,
+        // not conventions (RFC 0005 §2.8).
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+        let task_id = task_of(&valid_task_tx(&sk, 0, [0x06u8; 32])).task_id();
+
+        let mut tx = valid_task_tx(&sk, 0, [0x06u8; 32]);
+        tx.amount = 1;
+        resign(&sk, &mut tx);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskFieldConstraint(0))
+        ));
+
+        let mut tx = valid_task_tx(&sk, 0, [0x06u8; 32]);
+        tx.receiver = Address([1u8; 32]);
+        resign(&sk, &mut tx);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskFieldConstraint(0))
+        ));
+        assert_untouched(&backend, &sk, &task_id);
+    }
+
+    #[test]
+    fn compute_task_invalid_signature_rejected() {
+        // Rule (c): the transaction signature authenticates the
+        // submission; the envelope carries no second signature, so
+        // tampering with any envelope byte after signing is caught here.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+
+        let mut tx = valid_task_tx(&sk, 0, [0x07u8; 32]);
+        tx.signature[0] ^= 0x01;
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::InvalidSignature(0))
+        ));
+
+        let mut tx = valid_task_tx(&sk, 0, [0x07u8; 32]);
+        let mut tampered = task_of(&tx).clone();
+        tampered.execution_spec.push(0xFF);
+        tx.payload = TransactionPayload::ComputeTask(Box::new(tampered));
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::InvalidSignature(0))
+        ));
+
+        // Signed by a key other than the sender.
+        let other = SigningKey::from_bytes(&[71u8; 32]);
+        let mut tx = valid_task_tx(&sk, 0, [0x07u8; 32]);
+        resign(&other, &mut tx);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::InvalidSignature(0))
+        ));
+    }
+
+    #[test]
+    fn compute_task_nonce_rules() {
+        // Rule (d): the sender account must exist and the nonce must
+        // match. A task never creates an account and never moves balance.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let unfunded = SigningKey::from_bytes(&[72u8; 32]);
+        let tx = valid_task_tx(&unfunded, 0, [0x08u8; 32]);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::SenderAccountMissing(0))
+        ));
+
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+        let tx = valid_task_tx(&sk, 5, [0x08u8; 32]);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::InvalidNonce(0))
+        ));
+    }
+
+    #[test]
+    fn compute_task_version_rejected() {
+        // Rule (m): task.version == 1.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+        for version in [0u8, 2, 255] {
+            let mut task = task_of(&valid_task_tx(&sk, 0, [0x09u8; 32])).clone();
+            task.version = version;
+            let tx = signed_task_tx(&sk, 0, task);
+            let block = build_valid_block(&backend, vec![tx]);
+            assert!(
+                matches!(
+                    backend.apply_block(&block),
+                    Err(ApplyBlockError::TaskVersionUnsupported(0))
+                ),
+                "version {version} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn compute_task_execution_spec_bound() {
+        // Rule (n): 0 and 1024 bytes accepted, 1025 rejected; the maximal
+        // stored envelope is exactly 1155 bytes (RFC 0005 §2.10).
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let submitter = fund(&backend, &sk, 5000);
+
+        let too_large = task_for(
+            submitter,
+            executor_addr(),
+            [0x0Bu8; 32],
+            vec![0x5A; MAX_EXECUTION_SPEC_BYTES + 1],
+        );
+        let too_large_id = too_large.task_id();
+        let tx = signed_task_tx(&sk, 0, too_large);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::ExecutionSpecTooLarge(0))
+        ));
+        assert_untouched(&backend, &sk, &too_large_id);
+
+        let empty = task_for(submitter, executor_addr(), [0x0Au8; 32], Vec::new());
+        let maximal = task_for(
+            submitter,
+            executor_addr(),
+            [0x0Bu8; 32],
+            vec![0x5A; MAX_EXECUTION_SPEC_BYTES],
+        );
+        let (empty_id, maximal_id) = (empty.task_id(), maximal.task_id());
+        let block = build_valid_block(
+            &backend,
+            vec![
+                signed_task_tx(&sk, 0, empty),
+                signed_task_tx(&sk, 1, maximal),
+            ],
+        );
+        backend.apply_block(&block).unwrap();
+        assert_eq!(
+            backend.storage.get_task(&empty_id).unwrap().unwrap().len(),
+            1 + 32 * 4 + 1
+        );
+        assert_eq!(
+            backend.storage.get_task(&maximal_id).unwrap().unwrap().len(),
+            mbongo_core::MAX_COMPUTE_TASK_BYTES
+        );
+    }
+
+    #[test]
+    fn compute_task_submitter_mismatch_rejected() {
+        // Rule (o): the envelope cannot claim a submitter other than the
+        // signer, however valid the signature is.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+        let victim = Address([0x77u8; 32]);
+
+        let task = task_for(victim, executor_addr(), [0x0Cu8; 32], vec![1]);
+        let task_id = task.task_id();
+        let tx = signed_task_tx(&sk, 0, task);
+        assert!(tx.verify_signature(), "the signature itself is sound");
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::SenderSubmitterMismatch(0))
+        ));
+        assert_untouched(&backend, &sk, &task_id);
+    }
+
+    #[test]
+    fn compute_task_duplicate_in_prior_state_rejected() {
+        // Rule (p), prior-state half: the task_id is content-derived, so
+        // the same envelope under a fresh nonce is the same task and the
+        // second registration loses (first-registered-wins).
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let sender = fund(&backend, &sk, 5000);
+
+        let first = valid_task_tx(&sk, 0, [0x0Du8; 32]);
+        let task_id = task_of(&first).task_id();
+        let block = build_valid_block(&backend, vec![first]);
+        backend.apply_block(&block).unwrap();
+
+        let again = valid_task_tx(&sk, 1, [0x0Du8; 32]);
+        assert_eq!(
+            task_of(&again).task_id(),
+            task_id,
+            "the nonce is not in the envelope"
+        );
+        let block = build_valid_block(&backend, vec![again]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskAlreadyRegistered(0))
+        ));
+        // The rejected block changed nothing.
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 1);
+        assert_eq!(
+            backend.storage.get_account(&sender).unwrap().unwrap().nonce,
+            1
+        );
+        assert_eq!(backend.storage.get_last_included_tx_seq().unwrap(), 1);
+    }
+
+    #[test]
+    fn compute_task_duplicate_in_same_block_rejected() {
+        // Rule (p), same-block half: the whole block is invalid.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+
+        let a = valid_task_tx(&sk, 0, [0x0Eu8; 32]);
+        let b = valid_task_tx(&sk, 1, [0x0Eu8; 32]);
+        let task_id = task_of(&a).task_id();
+        let block = build_valid_block(&backend, vec![a, b]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskRepeatedInBlock(1))
+        ));
+        // Atomic: the first task was not persisted either.
+        assert_untouched(&backend, &sk, &task_id);
+    }
+
+    #[test]
+    fn stored_compute_task_tx_in_later_block_rejected() {
+        // The byte-identical transaction must not take the idempotent
+        // skip path: a stored task transaction implies a registered task.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&backend, &sk, 5000);
+
+        let tx = valid_task_tx(&sk, 0, [0x0Fu8; 32]);
+        let block = build_valid_block(&backend, vec![tx.clone()]);
+        backend.apply_block(&block).unwrap();
+
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskAlreadyRegistered(0))
+        ));
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 1);
+    }
+
+    #[test]
+    fn compute_task_rule_precedence_is_deterministic() {
+        // When several rules fail at once, the first in normative order
+        // names the error: (l) before (m) before (n) before (o).
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let submitter = fund(&backend, &sk, 5000);
+        let big = vec![0x5A; MAX_EXECUTION_SPEC_BYTES + 1];
+
+        // (l) + (m)
+        let mut task = task_for(submitter, executor_addr(), [0x10u8; 32], vec![]);
+        task.version = 2;
+        let mut tx = signed_task_tx(&sk, 0, task);
+        tx.amount = 1;
+        resign(&sk, &mut tx);
+        let block = build_valid_block(&backend, vec![tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskFieldConstraint(0))
+        ));
+
+        // (m) + (n)
+        let mut task = task_for(submitter, executor_addr(), [0x10u8; 32], big.clone());
+        task.version = 2;
+        let block = build_valid_block(&backend, vec![signed_task_tx(&sk, 0, task)]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskVersionUnsupported(0))
+        ));
+
+        // (n) + (o)
+        let task = task_for(Address([0x77u8; 32]), executor_addr(), [0x10u8; 32], big);
+        let block = build_valid_block(&backend, vec![signed_task_tx(&sk, 0, task)]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::ExecutionSpecTooLarge(0))
+        ));
+    }
+
+    #[test]
+    fn compute_task_then_matching_receipt_in_one_block() {
+        // A task and the receipt that answers it may share one block, in
+        // that order, and land in their two separate indexes. The receipt
+        // here is the one the RFC 0005 binding rules will require: same
+        // task_id, same input_commitment, the named executor. Anchoring
+        // rules (q)–(s) are not part of this gate and are not asserted.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let submitter = fund(&backend, &sk, 5000);
+        let ek = executor_key();
+        fund(&backend, &ek, 10);
+
+        let task = task_for(submitter, executor_addr(), [0x11u8; 32], vec![4, 2]);
+        let task_id = task.task_id();
+        let task_tx = signed_task_tx(&sk, 0, task.clone());
+
+        let mut receipt = signed_receipt_for(&ek, task_id, vec![], 1);
+        receipt.input_commitment = task.input_commitment;
+        receipt.signature = ek.sign(&receipt.receipt_hash().0).to_bytes();
+        let anchor_tx = signed_anchor_tx(&ek, 0, receipt.clone());
+
+        let block = build_valid_block(&backend, vec![task_tx, anchor_tx]);
+        backend.apply_block(&block).unwrap();
+        assert_eq!(
+            backend.storage.get_task(&task_id).unwrap(),
+            Some(task.encode())
+        );
+        assert_eq!(
+            backend.storage.get_receipt(&task_id).unwrap(),
+            Some(receipt.encode())
+        );
+    }
+
+    #[test]
+    fn compute_task_block_revalidates_on_a_follower() {
+        // The same block, re-decoded from storage bytes and re-applied by
+        // an independent node, passes the same rules and yields the same
+        // tip: block validation and block re-validation are one path.
+        let producer = make_backend();
+        producer.ensure_genesis().unwrap();
+        let follower = make_backend();
+        follower.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        fund(&producer, &sk, 5000);
+        fund(&follower, &sk, 5000);
+
+        let tx = valid_task_tx(&sk, 0, [0x12u8; 32]);
+        let task_id = task_of(&tx).task_id();
+        let block = build_valid_block(&producer, vec![tx]);
+        let producer_tip = producer.apply_block(&block).unwrap();
+
+        // Round-trip through the canonical block encoding, as sync does.
+        let stored = producer.storage.get_block_by_height(1).unwrap().unwrap();
+        let bytes = stored.encode();
+        let decoded = Block::decode(&mut &bytes[..]).unwrap();
+        assert_eq!(decoded, block);
+
+        let follower_tip = follower.apply_block(&decoded).unwrap();
+        assert_eq!(follower_tip, producer_tip);
+        assert_eq!(
+            follower.storage.get_task(&task_id).unwrap(),
+            producer.storage.get_task(&task_id).unwrap()
+        );
+        // And the JSON form a block RPC returns carries the task intact.
+        let json = serde_json::to_value(&block).unwrap();
+        let back: Block = serde_json::from_value(json).unwrap();
+        assert_eq!(back, block);
+    }
+
+    // ── RFC 0005: admission mirrors consensus ─────────────────────────
+
+    #[tokio::test]
+    async fn submit_compute_task_admitted_and_included() {
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let sender = fund(&backend, &sk, 5000);
+
+        let tx = valid_task_tx(&sk, 0, [0x20u8; 32]);
+        let task_id = task_of(&tx).task_id();
+        let hash = backend.submit_transaction(tx.clone()).await.unwrap();
+        // Idempotent re-submission while pending.
+        assert_eq!(backend.submit_transaction(tx.clone()).await.unwrap(), hash);
+        // Same envelope, fresh nonce: the same task, already pending.
+        let err = backend
+            .submit_transaction(valid_task_tx(&sk, 1, [0x20u8; 32]))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("compute task already pending"),
+            "{err}"
+        );
+        // A different salt is admitted behind it.
+        backend.submit_transaction(valid_task_tx(&sk, 1, [0x21u8; 32])).await.unwrap();
+
+        backend.produce_block().await.unwrap();
+        assert!(backend.storage.has_task(&task_id).unwrap());
+        assert_eq!(
+            backend.storage.get_account(&sender).unwrap().unwrap().nonce,
+            2
+        );
+        assert_eq!(
+            backend.storage.get_account(&sender).unwrap().unwrap().balance,
+            5000
+        );
+
+        // After inclusion: the byte-identical transaction and the same
+        // envelope under a new nonce are both duplicate registrations.
+        let err = backend.submit_transaction(tx).await.unwrap_err();
+        assert!(
+            err.to_string().contains("task_id already registered"),
+            "{err}"
+        );
+        let err = backend
+            .submit_transaction(valid_task_tx(&sk, 2, [0x20u8; 32]))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("task_id already registered"),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_compute_task_rejections_mirror_apply_block() {
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let sk = SigningKey::from_bytes(&[70u8; 32]);
+        let submitter = fund(&backend, &sk, 5000);
+        let base = || task_of(&valid_task_tx(&sk, 0, [0x22u8; 32])).clone();
+
+        // (k) legacy None payload.
+        let mut legacy = signed_transfer(&sk, Address([9u8; 32]), 1, 0);
+        legacy.tx_type = TransactionType::ComputeTask;
+        resign(&sk, &mut legacy);
+        let err = backend.submit_transaction(legacy).await.unwrap_err();
+        assert!(err.to_string().contains("payload does not match"), "{err}");
+
+        // (l)
+        let mut tx = signed_task_tx(&sk, 0, base());
+        tx.amount = 1;
+        resign(&sk, &mut tx);
+        let err = backend.submit_transaction(tx).await.unwrap_err();
+        assert!(
+            err.to_string().contains("compute task requires amount 0"),
+            "{err}"
+        );
+
+        // (c)
+        let mut tx = signed_task_tx(&sk, 0, base());
+        tx.signature[1] ^= 0x01;
+        let err = backend.submit_transaction(tx).await.unwrap_err();
+        assert!(err.to_string().contains("invalid signature"), "{err}");
+
+        // (m)
+        let mut task = base();
+        task.version = 2;
+        let err = backend.submit_transaction(signed_task_tx(&sk, 0, task)).await.unwrap_err();
+        assert!(
+            err.to_string().contains("unsupported compute task version"),
+            "{err}"
+        );
+
+        // (n)
+        let mut task = base();
+        task.execution_spec = vec![0; MAX_EXECUTION_SPEC_BYTES + 1];
+        let err = backend.submit_transaction(signed_task_tx(&sk, 0, task)).await.unwrap_err();
+        assert!(
+            err.to_string().contains("execution_spec too large"),
+            "{err}"
+        );
+
+        // (o)
+        let mut task = base();
+        task.submitter = Address([0x77u8; 32]);
+        let err = backend.submit_transaction(signed_task_tx(&sk, 0, task)).await.unwrap_err();
+        assert!(
+            err.to_string().contains("sender must equal task submitter"),
+            "{err}"
+        );
+
+        // Nothing above reached the mempool.
+        assert_eq!(backend.mempool.read().await.len(), 0);
+        let _ = submitter;
     }
 }

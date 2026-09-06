@@ -23,14 +23,18 @@ const CF_HEIGHT_INDEX: &str = "height_index";
 const CF_TX_SEQ_INDEX: &str = "tx_seq_index";
 /// Column family name for anchored receipts (task id → opaque bytes).
 const CF_RECEIPTS: &str = "receipts";
+/// Column family name for committed compute tasks (task id → opaque
+/// bytes), RFC 0005 §4.
+const CF_TASKS: &str = "tasks";
 
 /// Meta key holding the on-disk schema version (`u32`, big-endian).
 const SCHEMA_VERSION_KEY: &[u8] = b"schema_version";
 /// Current on-disk schema version. Version 1 (no `schema_version` key,
-/// no `receipts` column family) is the v0.2 layout.
+/// no `receipts` column family) is the v0.2 layout; version 2 added
+/// `receipts` (RFC 0002 §5); version 3 adds `tasks` (RFC 0005 §4).
 ///
 /// Crate-private: no production consumer outside this crate needs it.
-pub(crate) const SCHEMA_VERSION_CURRENT: u32 = 2;
+pub(crate) const SCHEMA_VERSION_CURRENT: u32 = 3;
 
 /// Column families a v0.2 (schema v1) database is required to contain.
 const REQUIRED_V1_CFS: [&str; 6] = [
@@ -42,8 +46,8 @@ const REQUIRED_V1_CFS: [&str; 6] = [
     CF_TX_SEQ_INDEX,
 ];
 
-/// All column families known to this binary (schema v2).
-const KNOWN_CFS: [&str; 8] = [
+/// All column families known to this binary (schema v3).
+const KNOWN_CFS: [&str; 9] = [
     "default",
     CF_ACCOUNTS,
     CF_BLOCKS,
@@ -52,12 +56,18 @@ const KNOWN_CFS: [&str; 8] = [
     CF_HEIGHT_INDEX,
     CF_TX_SEQ_INDEX,
     CF_RECEIPTS,
+    CF_TASKS,
 ];
+
+/// Column families created by the additive migrations, in the order the
+/// schema versions introduced them: `receipts` (v1 → v2), `tasks`
+/// (v2 → v3). Both hold derived state and are created empty.
+const MIGRATION_CFS: [&str; 2] = [CF_RECEIPTS, CF_TASKS];
 
 /// Persistent storage backed by RocksDB.
 ///
-/// Schema v2 column families: `accounts`, `blocks`, `transactions`, `meta`,
-/// `height_index`, `tx_seq_index`, and `receipts`.
+/// Schema v3 column families: `accounts`, `blocks`, `transactions`, `meta`,
+/// `height_index`, `tx_seq_index`, `receipts`, and `tasks`.
 pub struct RocksDbStorage {
     db: DB,
 }
@@ -70,18 +80,20 @@ impl RocksDbStorage {
     /// 2. Reject any column family not known to this binary.
     /// 3. Open exactly the listed column families.
     /// 4. Reject `schema_version` greater than [`SCHEMA_VERSION_CURRENT`].
-    /// 5. v1 → v2 migration: create the `receipts` column family if absent.
-    /// 6. Stamp `schema_version = 2` only after step 5 succeeded.
+    /// 5. Additive migrations: create the `receipts` (v1 → v2) and `tasks`
+    ///    (v2 → v3, RFC 0005 §4) column families if absent.
+    /// 6. Stamp `schema_version = 3` only after step 5 succeeded.
     ///
     /// A fresh directory is initialized with all known column families and
     /// stamped [`SCHEMA_VERSION_CURRENT`] immediately. The migration is
     /// idempotent: a crash between steps 5 and 6 is recovered on next open
     /// (creation is skipped, the stamp is applied).
     ///
-    /// Note: opening an existing v0.2 (schema v1) directory performs the
-    /// v1 → v2 migration as a side effect and crosses the RFC 0002
-    /// downgrade boundary — the directory can no longer be opened by v0.2
-    /// binaries. Rollback requires wiping the data directory.
+    /// Note: opening an existing v0.2 (schema v1) or v0.3 (schema v2)
+    /// directory performs the migration as a side effect and crosses the
+    /// downgrade boundary — the directory can no longer be opened by the
+    /// older binary (RFC 0002 §5, RFC 0005 §4). Rollback requires wiping
+    /// the data directory.
     ///
     /// # Errors
     ///
@@ -134,16 +146,20 @@ impl RocksDbStorage {
             )));
         }
 
-        // Step 5: v1 → v2 migration — create the receipts column family if
-        // absent. Also covers the self-heal case (v2 stamp present but CF
-        // missing) permitted by RFC 0002 §5, since the CF is derived state.
+        // Step 5: additive migrations — create each derived-state column
+        // family that is absent (`receipts` for v1 → v2, `tasks` for
+        // v2 → v3). Also covers the self-heal case (stamp present but CF
+        // missing) permitted by RFC 0002 §5, since both CFs are derived
+        // state reconstructable by replay.
         let mut db = db;
-        if db.cf_handle(CF_RECEIPTS).is_none() {
-            db.create_cf(CF_RECEIPTS, &cf_opts).map_err(|_| StorageError::Database)?;
+        for cf in MIGRATION_CFS {
+            if db.cf_handle(cf).is_none() {
+                db.create_cf(cf, &cf_opts).map_err(|_| StorageError::Database)?;
+            }
         }
 
-        // Step 6: stamp the schema version only after the column family
-        // exists. Idempotent recovery: if a previous open crashed between
+        // Step 6: stamp the schema version only after the column families
+        // exist. Idempotent recovery: if a previous open crashed between
         // steps 5 and 6, creation is skipped above and the stamp lands here.
         if version < SCHEMA_VERSION_CURRENT {
             write_schema_version(&db, SCHEMA_VERSION_CURRENT)?;
@@ -388,6 +404,20 @@ impl Storage for RocksDbStorage {
         self.db.get_cf(&cf, task_id).map_err(|_| StorageError::Database)
     }
 
+    fn has_task(&self, task_id: &[u8; 32]) -> Result<bool, StorageError> {
+        let cf = self.db.cf_handle(CF_TASKS).ok_or(StorageError::Database)?;
+        Ok(self
+            .db
+            .get_pinned_cf(&cf, task_id)
+            .map_err(|_| StorageError::Database)?
+            .is_some())
+    }
+
+    fn get_task(&self, task_id: &[u8; 32]) -> Result<Option<Vec<u8>>, StorageError> {
+        let cf = self.db.cf_handle(CF_TASKS).ok_or(StorageError::Database)?;
+        self.db.get_cf(&cf, task_id).map_err(|_| StorageError::Database)
+    }
+
     fn write_batch(&self, ops: Vec<BatchOp>) -> Result<(), StorageError> {
         let cf_accounts = self.db.cf_handle(CF_ACCOUNTS).ok_or(StorageError::Database)?;
         let cf_blocks = self.db.cf_handle(CF_BLOCKS).ok_or(StorageError::Database)?;
@@ -396,6 +426,7 @@ impl Storage for RocksDbStorage {
         let cf_height_index = self.db.cf_handle(CF_HEIGHT_INDEX).ok_or(StorageError::Database)?;
         let cf_tx_seq_index = self.db.cf_handle(CF_TX_SEQ_INDEX).ok_or(StorageError::Database)?;
         let cf_receipts = self.db.cf_handle(CF_RECEIPTS).ok_or(StorageError::Database)?;
+        let cf_tasks = self.db.cf_handle(CF_TASKS).ok_or(StorageError::Database)?;
 
         let mut batch = WriteBatchWithTransaction::<false>::default();
 
@@ -431,6 +462,9 @@ impl Storage for RocksDbStorage {
                 }
                 BatchOp::PutReceipt(task_id, bytes) => {
                     batch.put_cf(&cf_receipts, task_id, bytes);
+                }
+                BatchOp::PutTask(task_id, bytes) => {
+                    batch.put_cf(&cf_tasks, task_id, bytes);
                 }
             }
         }
