@@ -24,6 +24,7 @@ document disagrees with one of these, this table wins.
 | Contribution workflow | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | NORMATIVE |
 | What counts as engineering proof | [`ENGINEERING_EVIDENCE.md`](ENGINEERING_EVIDENCE.md) | NORMATIVE |
 | Receipt anchoring: data model, crypto domains, storage | [`architecture/compute-receipts.md`](architecture/compute-receipts.md) | CURRENT |
+| Where customer and model data may exist across Compute; the public-chain / control-plane / private-data-plane boundary | [`architecture/compute-privacy-data-plane.md`](architecture/compute-privacy-data-plane.md) | NORMATIVE (architecture, non-consensus — RFC 0005 wins on protocol) |
 | Building, signing, anchoring, verifying receipts | [`development/compute-receipts.md`](development/compute-receipts.md) | CURRENT |
 | Devnet topology and infrastructure | [`architecture/devnet-infrastructure.md`](architecture/devnet-infrastructure.md) | CURRENT |
 | Running a devnet locally | [`development/devnet.md`](development/devnet.md) | CURRENT |
@@ -190,6 +191,8 @@ authoritative; the authority map above is the only source of that.
 │   └── Block header/body schema, roots, and serialization
 ├── architecture/compute-receipts.md [L2] [PRIMARY]
 │   └── Compute receipts, anchoring, cryptographic domains, validation
+├── architecture/compute-privacy-data-plane.md [L2] [PRIMARY]
+│   └── Compute privacy boundary: public chain, control plane, private data plane, worker
 ├── compute_engine_overview.md [L3]
 │   └── GPU compute execution runtime
 ├── mempool_overview.md [L3]
