@@ -26,6 +26,7 @@ document disagrees with one of these, this table wins.
 | Receipt anchoring: data model, crypto domains, storage | [`architecture/compute-receipts.md`](architecture/compute-receipts.md) | CURRENT |
 | Where customer and model data may exist across Compute; the public-chain / control-plane / private-data-plane boundary | [`architecture/compute-privacy-data-plane.md`](architecture/compute-privacy-data-plane.md) | NORMATIVE (architecture, non-consensus — RFC 0005 wins on protocol) |
 | How a client, the control plane, the private data plane and a worker hand private inputs and results to one another | [`architecture/compute-private-data-plane-interface.md`](architecture/compute-private-data-plane-interface.md) | NORMATIVE (architecture, non-consensus — RFC 0005 wins on protocol) |
+| What the control plane may and must do between an accepted `ComputeTask` and an anchored receipt; leases, attempts, retry, duplicate handling, receipt relay | [`architecture/compute-control-plane-worker-interface.md`](architecture/compute-control-plane-worker-interface.md) | NORMATIVE (architecture, non-consensus — RFC 0005 wins on protocol) |
 | Building, signing, anchoring, verifying receipts | [`development/compute-receipts.md`](development/compute-receipts.md) | CURRENT |
 | Devnet topology and infrastructure | [`architecture/devnet-infrastructure.md`](architecture/devnet-infrastructure.md) | CURRENT |
 | Running a devnet locally | [`development/devnet.md`](development/devnet.md) | CURRENT |
@@ -196,6 +197,8 @@ authoritative; the authority map above is the only source of that.
 │   └── Compute privacy boundary: public chain, control plane, private data plane, worker
 ├── architecture/compute-private-data-plane-interface.md [L2] [PRIMARY]
 │   └── Private data plane handoff contract: references, capabilities, fetch, result, failure windows
+├── architecture/compute-control-plane-worker-interface.md [L2] [PRIMARY]
+│   └── Control plane and worker coordination contract: discovery, leases, attempts, lifecycle, retry, receipt relay
 ├── compute_engine_overview.md [L3]
 │   └── GPU compute execution runtime
 ├── mempool_overview.md [L3]
