@@ -1,6 +1,10 @@
 # RFC 0005 — Compute Task Commitment (Protocol v0.4)
 
-**Status:** Draft
+**Status:** Accepted — sole-maintainer
+**Governance mode:** SINGLE_MAINTAINER
+**Accepted:** 2026-09-06
+**Accepted by:** @gkalombo21 (author)
+**Independent Core Maintainer review:** unavailable — `E(R) = 0` at acceptance
 **Author:** Gilbert Kalombo
 **Created:** 2026-08-29
 **Protocol version:** v0.3 → v0.4
