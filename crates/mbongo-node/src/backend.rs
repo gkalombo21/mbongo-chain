@@ -18,7 +18,7 @@ use mbongo_network::rpc::{BackendError, RpcBackend};
 use mbongo_network::BlockBroadcaster;
 use mbongo_storage::{BatchOp, Storage, StorageError};
 use mbongo_verification::{verify_receipt_signature, ReceiptError, ReceiptIndex, RECEIPT_VERSION};
-use parity_scale_codec::Encode;
+use parity_scale_codec::{Decode, Encode};
 use tokio::sync::RwLock;
 
 use crate::mempool::{Mempool, MempoolError};
@@ -164,6 +164,59 @@ fn check_task_envelope(
         return Err(TaskRuleViolation::SubmitterMismatch);
     }
     Ok(task.task_id())
+}
+
+/// Why an anchored receipt failed one of rules (q)–(s) of RFC 0005 §3.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BindingViolation {
+    /// No task with `receipt.task_id` in prior state or earlier in the
+    /// block (rule q).
+    TaskNotRegistered,
+    /// `receipt.input_commitment != task.input_commitment` (rule r).
+    InputCommitmentMismatch,
+    /// `receipt.executor != task.executor` (rule s).
+    ExecutorNotAuthorised,
+}
+
+/// Rules (q)–(s) of RFC 0005 §3, in normative order: the receipt answers a
+/// registered task, over the input the submitter committed to, from the
+/// executor the submitter named. `task` is the registered envelope the
+/// caller resolved from prior chain state or from earlier in the same
+/// block; `None` fails rule (q).
+///
+/// Three field equalities and nothing else. Consensus never learns how
+/// either commitment was derived (§2.4), reads no input or output, and
+/// forms no opinion about the answer (§9.2): an anchored receipt is a
+/// bound claim, not a proven result. Shared by consensus and admission so
+/// the two cannot diverge.
+fn check_receipt_binding(
+    receipt: &Receipt,
+    task: Option<&ComputeTask>,
+) -> Result<(), BindingViolation> {
+    let Some(task) = task else {
+        return Err(BindingViolation::TaskNotRegistered);
+    };
+    if receipt.input_commitment != task.input_commitment {
+        return Err(BindingViolation::InputCommitmentMismatch);
+    }
+    if receipt.executor != task.executor {
+        return Err(BindingViolation::ExecutorNotAuthorised);
+    }
+    Ok(())
+}
+
+/// Loads the registered task under `task_id` from prior chain state and
+/// decodes its canonical bytes. Absence is `Ok(None)`; bytes that do not
+/// decode are a storage failure, never an "unknown task": consensus wrote
+/// them as the canonical encoding and must not reinterpret corruption as
+/// a protocol verdict.
+fn load_task<S: Storage>(storage: &S, task_id: &[u8; 32]) -> Result<Option<ComputeTask>, String> {
+    let Some(bytes) = storage.get_task(task_id).map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    ComputeTask::decode(&mut &bytes[..])
+        .map(Some)
+        .map_err(|e| format!("corrupt task bytes under task_id {}: {e}", Hash(*task_id)))
 }
 
 /// Node backend backed by a [`Storage`] implementation.
@@ -348,12 +401,13 @@ impl<S: Storage> NodeBackend<S> {
         let mut pending_task_ids: std::collections::HashSet<[u8; 32]> =
             std::collections::HashSet::new();
 
-        // Transient set of task_ids committed by ComputeTask transactions
-        // earlier in THIS block (RFC 0005 rule p, same-block half). A
-        // separate set from the receipts above: a task and its receipt
-        // may legitimately share one id within a block.
-        let mut pending_tasks: std::collections::HashSet<[u8; 32]> =
-            std::collections::HashSet::new();
+        // Transient map of the tasks committed by ComputeTask transactions
+        // earlier in THIS block, keyed by task_id (RFC 0005 rule p,
+        // same-block half; rules q–s, same-block half). Separate from the
+        // receipt set above: a task and its receipt may legitimately share
+        // one id within a block, in that order.
+        let mut pending_tasks: std::collections::HashMap<[u8; 32], ComputeTask> =
+            std::collections::HashMap::new();
 
         for (i, tx) in block.body.transactions.iter().enumerate() {
             // (a)/(k) Type/form (RFC 0002 §2, RFC 0005 §3): AnchorReceipt
@@ -447,10 +501,10 @@ impl<S: Storage> NodeBackend<S> {
                 {
                     return Err(ApplyBlockError::TaskAlreadyRegistered(i));
                 }
-                if pending_tasks.contains(&task_id) {
+                if pending_tasks.contains_key(&task_id) {
                     return Err(ApplyBlockError::TaskRepeatedInBlock(i));
                 }
-                pending_tasks.insert(task_id);
+                pending_tasks.insert(task_id, task.clone());
 
                 // Effects: accumulated only; committed in the final atomic
                 // batch. The stored task is its canonical SCALE encoding,
@@ -513,6 +567,28 @@ impl<S: Storage> NodeBackend<S> {
                     }
                     None => {}
                 }
+
+                // (q)+(r)+(s) Binding to the registered task (RFC 0005
+                // §3): the task exists in prior chain state or earlier in
+                // this block, the receipt carries its input_commitment,
+                // and the receipt's executor is the one the task named.
+                // Rule (g) above already proved the anchoring sender IS
+                // receipt.executor, so (s) makes the sender the authorised
+                // party. Corrupt stored task bytes are a storage failure,
+                // not an unknown task.
+                let stored_task = load_task(storage.as_ref(), &receipt.task_id)
+                    .map_err(ApplyBlockError::Storage)?;
+                let registered =
+                    stored_task.as_ref().or_else(|| pending_tasks.get(&receipt.task_id));
+                check_receipt_binding(receipt, registered).map_err(|why| match why {
+                    BindingViolation::TaskNotRegistered => ApplyBlockError::TaskNotRegistered(i),
+                    BindingViolation::InputCommitmentMismatch => {
+                        ApplyBlockError::ReceiptInputCommitmentMismatch(i)
+                    }
+                    BindingViolation::ExecutorNotAuthorised => {
+                        ApplyBlockError::ReceiptExecutorNotAuthorised(i)
+                    }
+                })?;
                 pending_task_ids.insert(receipt.task_id);
 
                 // Effects: accumulated only; committed in the final atomic
@@ -722,6 +798,18 @@ pub enum ApplyBlockError {
     /// the same block (RFC 0005 rule p, same-block half).
     #[error("compute task repeated within block at index {0}")]
     TaskRepeatedInBlock(usize),
+    /// The receipt's task_id names no task in prior chain state or earlier
+    /// in the same block (RFC 0005 rule q).
+    #[error("receipt task_id is not a registered task at index {0}")]
+    TaskNotRegistered(usize),
+    /// The receipt's input_commitment is not the registered task's
+    /// (RFC 0005 rule r).
+    #[error("receipt input_commitment does not match the task at index {0}")]
+    ReceiptInputCommitmentMismatch(usize),
+    /// The receipt's executor is not the one the registered task named
+    /// (RFC 0005 rule s).
+    #[error("receipt executor is not authorised by the task at index {0}")]
+    ReceiptExecutorNotAuthorised(usize),
     /// Storage error.
     #[error("storage error: {0}")]
     Storage(String),
@@ -942,6 +1030,29 @@ impl<S: Storage + Send + Sync + 'static> RpcBackend for NodeBackend<S> {
                         "task_id already anchored".to_string(),
                     ));
                 }
+                // (q)–(s) Binding to the registered task (RFC 0005 §3):
+                // prior chain state, else a task pending in this mempool,
+                // which precedes the receipt in the block this node would
+                // produce (insertion order) — the same-block half.
+                let stored_task =
+                    load_task(storage.as_ref(), task_id).map_err(BackendError::Internal)?;
+                let registered = stored_task.or_else(|| pool.pending_compute_task(task_id));
+                check_receipt_binding(receipt, registered.as_ref()).map_err(|why| {
+                    BackendError::Internal(
+                        match why {
+                            BindingViolation::TaskNotRegistered => {
+                                "receipt task_id is not a registered task"
+                            }
+                            BindingViolation::InputCommitmentMismatch => {
+                                "receipt input_commitment does not match the task"
+                            }
+                            BindingViolation::ExecutorNotAuthorised => {
+                                "receipt executor is not authorised by the task"
+                            }
+                        }
+                        .to_string(),
+                    )
+                })?;
             }
 
             // Task-specific admission (rules m–p; RFC 0005 §3).
@@ -2003,6 +2114,34 @@ mod tests {
         signed_anchor_tx(sk, nonce, signed_receipt_for(sk, task_id, vec![1, 2, 3], 1))
     }
 
+    /// Registers, directly in storage, a task that `executor_sk` is
+    /// authorised to answer, carrying the input commitment
+    /// `signed_receipt_for` uses. Stands in for the block a client would
+    /// have committed it in, exactly as `fund` stands in for a funding
+    /// transfer, so the v0.3 anchoring tests keep their nonce and height
+    /// arithmetic. Returns the task_id an anchor must carry (RFC 0005
+    /// rules q–s).
+    fn seed_task(
+        backend: &NodeBackend<InMemoryStorage>,
+        executor_sk: &SigningKey,
+        salt: [u8; 32],
+    ) -> [u8; 32] {
+        let task = ComputeTask {
+            version: COMPUTE_TASK_VERSION,
+            submitter: Address([0xC1u8; 32]),
+            executor: Address(executor_sk.verifying_key().to_bytes()),
+            salt,
+            input_commitment: [1u8; 32],
+            execution_spec: Vec::new(),
+        };
+        let task_id = task.task_id();
+        backend
+            .storage
+            .write_batch(vec![BatchOp::PutTask(task_id, task.encode())])
+            .unwrap();
+        task_id
+    }
+
     /// Funds an account for `sk` with the given balance.
     fn fund(backend: &NodeBackend<InMemoryStorage>, sk: &SigningKey, balance: u128) -> Address {
         let addr = Address(sk.verifying_key().to_bytes());
@@ -2127,8 +2266,10 @@ mod tests {
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
 
+        let task_id = seed_task(&backend, &sk, [0x76u8; 32]);
+
         // 4097 bytes: rejected at rule (e).
-        let receipt = signed_receipt_for(&sk, [0x76u8; 32], vec![0u8; 4097], 1);
+        let receipt = signed_receipt_for(&sk, task_id, vec![0u8; 4097], 1);
         let tx = signed_anchor_tx(&sk, 0, receipt);
         let block = build_valid_block(&backend, vec![tx]);
         assert!(matches!(
@@ -2137,11 +2278,11 @@ mod tests {
         ));
 
         // Exactly 4096 bytes: accepted.
-        let receipt = signed_receipt_for(&sk, [0x76u8; 32], vec![0u8; 4096], 1);
+        let receipt = signed_receipt_for(&sk, task_id, vec![0u8; 4096], 1);
         let tx = signed_anchor_tx(&sk, 0, receipt);
         let block = build_valid_block(&backend, vec![tx]);
         backend.apply_block(&block).unwrap();
-        assert!(backend.storage.has_receipt(&[0x76u8; 32]).unwrap());
+        assert!(backend.storage.has_receipt(&task_id).unwrap());
     }
 
     #[test]
@@ -2210,7 +2351,7 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         let sender_addr = fund(&backend, &sk, 5000);
-        let task_id = [0x96u8; 32];
+        let task_id = seed_task(&backend, &sk, [0x96u8; 32]);
 
         // Anchor once at height 1.
         let anchor = valid_anchor_tx(&sk, 0, task_id);
@@ -2252,7 +2393,7 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
-        let task_id = [0x7Au8; 32];
+        let task_id = seed_task(&backend, &sk, [0x7Au8; 32]);
 
         // Anchor once.
         let block = build_valid_block(&backend, vec![valid_anchor_tx(&sk, 0, task_id)]);
@@ -2274,7 +2415,7 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
-        let task_id = [0x7Bu8; 32];
+        let task_id = seed_task(&backend, &sk, [0x7Bu8; 32]);
 
         // Two receipts for one task_id in the same block: rule (j) fires
         // on the second, and the whole block — including the first — is
@@ -2399,7 +2540,7 @@ mod tests {
         let anchor_sender = fund(&backend, &anchor_sk, 100);
         let poor_sk = SigningKey::from_bytes(&[65u8; 32]);
         fund(&backend, &poor_sk, 10);
-        let task_id = [0x7Eu8; 32];
+        let task_id = seed_task(&backend, &anchor_sk, [0x7Eu8; 32]);
 
         // Valid receipt first, then a transfer exceeding its balance.
         let anchor = valid_anchor_tx(&anchor_sk, 0, task_id);
@@ -2430,7 +2571,7 @@ mod tests {
         let anchor_sk = SigningKey::from_bytes(&[63u8; 32]);
         let anchor_sender = fund(&backend, &anchor_sk, 100);
         let receiver_addr = Address([64u8; 32]);
-        let task_id = [0x7Fu8; 32];
+        let task_id = seed_task(&backend, &anchor_sk, [0x7Fu8; 32]);
 
         let receipt = signed_receipt_for(&anchor_sk, task_id, vec![1, 2, 3], 1);
         let expected_bytes = receipt.encode();
@@ -2569,7 +2710,8 @@ mod tests {
 
         // Retry with a valid block: sequence values start at 1, exactly as
         // if the failed attempt had never happened.
-        let good_anchor = valid_anchor_tx(&anchor_sk, 0, [0x94u8; 32]);
+        let good_anchor =
+            valid_anchor_tx(&anchor_sk, 0, seed_task(&backend, &anchor_sk, [0x94u8; 32]));
         let transfer_hash = compute_tx_hash(&transfer);
         let anchor_hash = compute_tx_hash(&good_anchor);
         let block = build_valid_block(&backend, vec![transfer, good_anchor]);
@@ -2679,7 +2821,7 @@ mod tests {
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
 
-        let tx = valid_anchor_tx(&sk, 0, [0x80u8; 32]);
+        let tx = valid_anchor_tx(&sk, 0, seed_task(&backend, &sk, [0x80u8; 32]));
         backend.submit_transaction(tx).await.unwrap();
         assert_eq!(backend.mempool.read().await.len(), 1);
     }
@@ -2741,7 +2883,7 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
-        let task_id = [0x84u8; 32];
+        let task_id = seed_task(&backend, &sk, [0x84u8; 32]);
 
         // Anchor via a block first.
         let block = build_valid_block(&backend, vec![valid_anchor_tx(&sk, 0, task_id)]);
@@ -2760,7 +2902,7 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
-        let task_id = [0x97u8; 32];
+        let task_id = seed_task(&backend, &sk, [0x97u8; 32]);
 
         // Anchor via a block.
         let anchor = valid_anchor_tx(&sk, 0, task_id);
@@ -2781,18 +2923,24 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
-        let task_id = [0x85u8; 32];
+        let task_id = seed_task(&backend, &sk, [0x85u8; 32]);
 
         backend.submit_transaction(valid_anchor_tx(&sk, 0, task_id)).await.unwrap();
-        // A different executor claiming the same task_id while the first
-        // is pending: rejected by the mempool-local task_id guard.
+        // The named executor anchoring a second, different receipt for the
+        // same task while the first is pending: rejected by the
+        // mempool-local task_id guard.
+        let second = signed_receipt_for(&sk, task_id, vec![9, 9], 1);
+        let err = backend.submit_transaction(signed_anchor_tx(&sk, 1, second)).await.unwrap_err();
+        assert!(err.to_string().contains("already pending"), "{err}");
+        // A different executor claiming the same task_id never reaches
+        // that guard: RFC 0005 rule (s) rejects it first.
         let other = SigningKey::from_bytes(&[61u8; 32]);
         fund(&backend, &other, 100);
         let err = backend
             .submit_transaction(valid_anchor_tx(&other, 0, task_id))
             .await
             .unwrap_err();
-        assert!(err.to_string().contains("already pending"), "{err}");
+        assert!(err.to_string().contains("not authorised"), "{err}");
         assert_eq!(backend.mempool.read().await.len(), 1);
     }
 
@@ -2802,7 +2950,7 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[60u8; 32]);
         fund(&backend, &sk, 5000);
-        let task_id = [0x86u8; 32];
+        let task_id = seed_task(&backend, &sk, [0x86u8; 32]);
 
         backend.submit_transaction(valid_anchor_tx(&sk, 0, task_id)).await.unwrap();
         backend.produce_block().await.unwrap();
@@ -3118,8 +3266,8 @@ mod tests {
 
         let sk = SigningKey::from_bytes(&[72u8; 32]);
         let executor_addr = fund(&backend, &sk, 100);
-        let task_a = [0xA1u8; 32];
-        let task_b = [0xA2u8; 32];
+        let task_a = seed_task(&backend, &sk, [0xA1u8; 32]);
+        let task_b = seed_task(&backend, &sk, [0xA2u8; 32]);
 
         // Two anchors from ONE executor, consecutive nonces, ONE block.
         // Distinct task ids, so rules (i)/(j) are not the subject here.
@@ -3499,8 +3647,8 @@ mod tests {
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[95u8; 32]);
         let executor = fund(&backend, &sk, 100);
-        let task_a = [0xB1u8; 32];
-        let task_b = [0xB2u8; 32];
+        let task_a = seed_task(&backend, &sk, [0xB1u8; 32]);
+        let task_b = seed_task(&backend, &sk, [0xB2u8; 32]);
 
         // Both submitted before any block is produced.
         backend.submit_transaction(valid_anchor_tx(&sk, 0, task_a)).await.unwrap();
@@ -4650,10 +4798,9 @@ mod tests {
     #[test]
     fn compute_task_then_matching_receipt_in_one_block() {
         // A task and the receipt that answers it may share one block, in
-        // that order, and land in their two separate indexes. The receipt
-        // here is the one the RFC 0005 binding rules will require: same
-        // task_id, same input_commitment, the named executor. Anchoring
-        // rules (q)–(s) are not part of this gate and are not asserted.
+        // that order, and land in their two separate indexes: the
+        // same-block half of RFC 0005 rule (q), with (r) and (s) holding —
+        // same task_id, same input_commitment, the named executor.
         let backend = make_backend();
         backend.ensure_genesis().unwrap();
         let sk = SigningKey::from_bytes(&[70u8; 32]);
@@ -4833,5 +4980,695 @@ mod tests {
         // Nothing above reached the mempool.
         assert_eq!(backend.mempool.read().await.len(), 0);
         let _ = submitter;
+    }
+
+    // ── RFC 0005: receipt binding, rules (q)–(s) ──────────────────────
+
+    /// A client key that commits tasks and never anchors: keeps the
+    /// executor's nonces untouched.
+    fn client_key() -> SigningKey {
+        SigningKey::from_bytes(&[0xC0u8; 32])
+    }
+
+    /// Commits a task naming `executor` in its own block at the current
+    /// tip, from the funded client key. Returns the registered envelope.
+    fn register_task(
+        backend: &NodeBackend<InMemoryStorage>,
+        executor: Address,
+        salt: [u8; 32],
+        input_commitment: [u8; 32],
+    ) -> ComputeTask {
+        let ck = client_key();
+        let client = Address(ck.verifying_key().to_bytes());
+        let nonce = backend.storage.get_account(&client).unwrap().map_or(0, |a| a.nonce);
+        if nonce == 0 {
+            fund(backend, &ck, 1);
+        }
+        let task = ComputeTask {
+            version: COMPUTE_TASK_VERSION,
+            submitter: client,
+            executor,
+            salt,
+            input_commitment,
+            execution_spec: vec![0x51],
+        };
+        let block = build_valid_block(backend, vec![signed_task_tx(&ck, nonce, task.clone())]);
+        backend.apply_block(&block).unwrap();
+        assert!(backend.storage.has_task(&task.task_id()).unwrap());
+        task
+    }
+
+    /// A receipt answering `task`, signed by `executor_sk`: the task's
+    /// task_id and input_commitment, the signer as executor.
+    fn receipt_answering(executor_sk: &SigningKey, task: &ComputeTask) -> Receipt {
+        let mut receipt = signed_receipt_for(executor_sk, task.task_id(), vec![0xAB], 1);
+        receipt.input_commitment = task.input_commitment;
+        receipt.signature = executor_sk.sign(&receipt.receipt_hash().0).to_bytes();
+        receipt
+    }
+
+    /// Anchors `receipt` from `sk` in a fresh block at the tip.
+    fn anchor_block(
+        backend: &NodeBackend<InMemoryStorage>,
+        sk: &SigningKey,
+        nonce: u64,
+        receipt: Receipt,
+    ) -> Result<Hash, ApplyBlockError> {
+        let block = build_valid_block(backend, vec![signed_anchor_tx(sk, nonce, receipt)]);
+        backend.apply_block(&block)
+    }
+
+    #[test]
+    fn valid_anchor_for_registered_task() {
+        // (q), (r), (s) positive: the named executor answers a registered
+        // task over the committed input. Both derived states exist
+        // afterwards (RFC 0005 §4.1): submitted and completed.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = register_task(&backend, executor, [0x30u8; 32], [0x1Cu8; 32]);
+        let task_id = task.task_id();
+
+        let receipt = receipt_answering(&ek, &task);
+        anchor_block(&backend, &ek, 0, receipt.clone()).unwrap();
+
+        assert!(backend.storage.has_task(&task_id).unwrap());
+        assert_eq!(
+            backend.storage.get_receipt(&task_id).unwrap(),
+            Some(receipt.encode())
+        );
+        let acc = backend.storage.get_account(&executor).unwrap().unwrap();
+        assert_eq!(acc.nonce, 1);
+        assert_eq!(acc.balance, 10, "anchoring moves no balance");
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 2);
+    }
+
+    #[test]
+    fn anchor_unknown_task_rejected() {
+        // (q) negative, three ways: an arbitrary task_id; a task_id whose
+        // registration failed (never stored); the receipt that was valid
+        // before RFC 0005 (v0.3 anchored it unbound).
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+
+        let arbitrary = signed_receipt_for(&ek, [0x7Au8; 32], vec![], 1);
+        assert!(matches!(
+            anchor_block(&backend, &ek, 0, arbitrary),
+            Err(ApplyBlockError::TaskNotRegistered(0))
+        ));
+
+        // A task whose registration failed: over the bound, so its block
+        // was rejected and nothing under its task_id exists.
+        let ck = client_key();
+        let client = fund(&backend, &ck, 1);
+        let mut failed = task_for(
+            client,
+            executor,
+            [0x31u8; 32],
+            vec![0x5A; MAX_EXECUTION_SPEC_BYTES + 1],
+        );
+        failed.submitter = client;
+        let block = build_valid_block(&backend, vec![signed_task_tx(&ck, 0, failed.clone())]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::ExecutionSpecTooLarge(0))
+        ));
+        assert!(!backend.storage.has_task(&failed.task_id()).unwrap());
+        let for_failed = receipt_answering(&ek, &failed);
+        assert!(matches!(
+            anchor_block(&backend, &ek, 0, for_failed),
+            Err(ApplyBlockError::TaskNotRegistered(0))
+        ));
+
+        // Nothing was anchored, and the executor's nonce is untouched.
+        assert!(!backend.storage.has_receipt(&[0x7Au8; 32]).unwrap());
+        assert_eq!(
+            backend.storage.get_account(&executor).unwrap().unwrap().nonce,
+            0
+        );
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 0);
+    }
+
+    #[test]
+    fn anchor_wrong_task_binding_rejected() {
+        // A receipt built for task A but carrying task B's task_id: the
+        // registered task under that id is the authority, and the receipt
+        // is judged against B. Where B committed a different input the
+        // verdict is (r); where B named a different executor it is (s).
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task_a = register_task(&backend, executor, [0x32u8; 32], [0x1Cu8; 32]);
+        let task_b = register_task(&backend, executor, [0x33u8; 32], [0x2Du8; 32]);
+        let task_c = register_task(&backend, Address([0xE2u8; 32]), [0x34u8; 32], [0x1Cu8; 32]);
+
+        // A's receipt, B's id: same executor, different input → (r).
+        let mut receipt = receipt_answering(&ek, &task_a);
+        receipt.task_id = task_b.task_id();
+        receipt.signature = ek.sign(&receipt.receipt_hash().0).to_bytes();
+        assert!(matches!(
+            anchor_block(&backend, &ek, 0, receipt),
+            Err(ApplyBlockError::ReceiptInputCommitmentMismatch(0))
+        ));
+
+        // A's receipt, C's id: same input, C named another executor → (s).
+        let mut receipt = receipt_answering(&ek, &task_a);
+        receipt.task_id = task_c.task_id();
+        receipt.signature = ek.sign(&receipt.receipt_hash().0).to_bytes();
+        assert!(matches!(
+            anchor_block(&backend, &ek, 0, receipt),
+            Err(ApplyBlockError::ReceiptExecutorNotAuthorised(0))
+        ));
+
+        // The correct binding still works afterwards.
+        anchor_block(&backend, &ek, 0, receipt_answering(&ek, &task_a)).unwrap();
+        assert!(backend.storage.has_receipt(&task_a.task_id()).unwrap());
+        assert!(!backend.storage.has_receipt(&task_b.task_id()).unwrap());
+        assert!(!backend.storage.has_receipt(&task_c.task_id()).unwrap());
+    }
+
+    #[test]
+    fn anchor_wrong_input_commitment_rejected() {
+        // (r) negative: one flipped bit, and a commitment that is valid
+        // for another registered task. Consensus compares the 32 bytes and
+        // learns nothing about how either was derived.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = register_task(&backend, executor, [0x35u8; 32], [0x1Cu8; 32]);
+        let other = register_task(&backend, executor, [0x36u8; 32], [0x2Du8; 32]);
+
+        let mut flipped = receipt_answering(&ek, &task);
+        flipped.input_commitment[31] ^= 0x01;
+        flipped.signature = ek.sign(&flipped.receipt_hash().0).to_bytes();
+        assert!(matches!(
+            anchor_block(&backend, &ek, 0, flipped),
+            Err(ApplyBlockError::ReceiptInputCommitmentMismatch(0))
+        ));
+
+        let mut borrowed = receipt_answering(&ek, &task);
+        borrowed.input_commitment = other.input_commitment;
+        borrowed.signature = ek.sign(&borrowed.receipt_hash().0).to_bytes();
+        assert!(matches!(
+            anchor_block(&backend, &ek, 0, borrowed),
+            Err(ApplyBlockError::ReceiptInputCommitmentMismatch(0))
+        ));
+        assert!(!backend.storage.has_receipt(&task.task_id()).unwrap());
+    }
+
+    #[test]
+    fn anchor_wrong_executor_rejected() {
+        // (s) negative: a different, fully funded executor produces a
+        // well-formed receipt for the task — its own executor field, its
+        // own valid receipt signature, its own valid anchoring signature,
+        // so rules (c), (g) and (h) all pass — and is rejected because the
+        // task named someone else. This is the squatting receipt of RFC
+        // 0005 §9.1, and it never consumes the task.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = register_task(&backend, executor, [0x37u8; 32], [0x1Cu8; 32]);
+        let squatter = SigningKey::from_bytes(&[0xE9u8; 32]);
+        fund(&backend, &squatter, 10);
+
+        let receipt = receipt_answering(&squatter, &task);
+        assert!(
+            verify_receipt_signature(&receipt),
+            "the receipt itself is sound"
+        );
+        assert!(matches!(
+            anchor_block(&backend, &squatter, 0, receipt),
+            Err(ApplyBlockError::ReceiptExecutorNotAuthorised(0))
+        ));
+        assert!(!backend.storage.has_receipt(&task.task_id()).unwrap());
+
+        // The named executor can still answer: the task was not consumed.
+        anchor_block(&backend, &ek, 0, receipt_answering(&ek, &task)).unwrap();
+        assert!(backend.storage.has_receipt(&task.task_id()).unwrap());
+    }
+
+    #[test]
+    fn task_submitter_not_executor_cannot_anchor() {
+        // The client who committed the task, anchoring its own task with
+        // itself as receipt executor: authenticated (g), unauthorised (s).
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let task = register_task(&backend, executor_addr(), [0x38u8; 32], [0x1Cu8; 32]);
+        let ck = client_key();
+        let receipt = receipt_answering(&ck, &task);
+        assert!(matches!(
+            anchor_block(&backend, &ck, 1, receipt),
+            Err(ApplyBlockError::ReceiptExecutorNotAuthorised(0))
+        ));
+        assert!(!backend.storage.has_receipt(&task.task_id()).unwrap());
+    }
+
+    #[test]
+    fn unrelated_signer_cannot_anchor_the_executors_receipt() {
+        // A control-plane-like relayer holding the executor's genuine
+        // signed receipt bytes but not the executor's key: the anchoring
+        // sender is not the receipt executor, so rule (g) rejects it
+        // before (s) is reached. Forging the anchoring signature instead
+        // fails rule (c). Either way, no key but the executor's anchors.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = register_task(&backend, executor, [0x39u8; 32], [0x1Cu8; 32]);
+        let relayer = SigningKey::from_bytes(&[0xCCu8; 32]);
+        fund(&backend, &relayer, 10);
+
+        let genuine = receipt_answering(&ek, &task);
+        assert!(matches!(
+            anchor_block(&backend, &relayer, 0, genuine.clone()),
+            Err(ApplyBlockError::SenderExecutorMismatch(0))
+        ));
+
+        let mut forged = signed_anchor_tx(&ek, 0, genuine);
+        forged.signature = relayer.sign(&forged.signing_payload()).to_bytes();
+        let block = build_valid_block(&backend, vec![forged]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::InvalidSignature(0))
+        ));
+        assert!(!backend.storage.has_receipt(&task.task_id()).unwrap());
+    }
+
+    #[test]
+    fn same_block_anchor_before_task_rejected() {
+        // (q) is "prior chain state or EARLIER in the same block": the
+        // receipt ahead of its task sees no task, and the block fails.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ck = client_key();
+        let client = fund(&backend, &ck, 1);
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+
+        let task = task_for(client, executor, [0x3Au8; 32], vec![1]);
+        let task_id = task.task_id();
+        let anchor_tx = signed_anchor_tx(&ek, 0, receipt_answering(&ek, &task));
+        let task_tx = signed_task_tx(&ck, 0, task);
+        let block = build_valid_block(&backend, vec![anchor_tx, task_tx]);
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::TaskNotRegistered(0))
+        ));
+        // Neither the task nor the receipt was persisted.
+        assert!(!backend.storage.has_task(&task_id).unwrap());
+        assert!(!backend.storage.has_receipt(&task_id).unwrap());
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 0);
+    }
+
+    #[test]
+    fn invalid_anchor_block_is_atomic() {
+        // A valid task at index 0 and a receipt violating (r) at index 1:
+        // the whole block fails through the existing atomic batch, so the
+        // task is not persisted either, and no nonce or sequence moves.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ck = client_key();
+        let client = fund(&backend, &ck, 1);
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+
+        let task = task_for(client, executor, [0x3Bu8; 32], vec![1]);
+        let task_id = task.task_id();
+        let mut receipt = receipt_answering(&ek, &task);
+        receipt.input_commitment[0] ^= 0x80;
+        receipt.signature = ek.sign(&receipt.receipt_hash().0).to_bytes();
+        let block = build_valid_block(
+            &backend,
+            vec![
+                signed_task_tx(&ck, 0, task),
+                signed_anchor_tx(&ek, 0, receipt),
+            ],
+        );
+        assert!(matches!(
+            backend.apply_block(&block),
+            Err(ApplyBlockError::ReceiptInputCommitmentMismatch(1))
+        ));
+        assert!(!backend.storage.has_task(&task_id).unwrap());
+        assert!(!backend.storage.has_receipt(&task_id).unwrap());
+        assert_eq!(
+            backend.storage.get_account(&client).unwrap().unwrap().nonce,
+            0
+        );
+        assert_eq!(
+            backend.storage.get_account(&executor).unwrap().unwrap().nonce,
+            0
+        );
+        assert_eq!(backend.storage.get_last_included_tx_seq().unwrap(), 0);
+        assert_eq!(backend.storage.get_latest_height().unwrap(), 0);
+    }
+
+    #[test]
+    fn binding_precedence_is_deterministic() {
+        // Existing rules keep their positions: a duplicate (i) is reported
+        // before any binding question; a bad receipt signature (h) before
+        // an unknown task; and within the binding, (q) before (r) before
+        // (s) when several fail at once.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = register_task(&backend, executor, [0x3Cu8; 32], [0x1Cu8; 32]);
+        let other_exec = SigningKey::from_bytes(&[0xE9u8; 32]);
+        fund(&backend, &other_exec, 10);
+
+        // (h) before (q): unknown task AND bad signature → signature.
+        let mut bad = signed_receipt_for(&ek, [0x7Bu8; 32], vec![], 1);
+        bad.signature = [0xEEu8; 64];
+        assert!(matches!(
+            anchor_block(&backend, &ek, 0, bad),
+            Err(ApplyBlockError::InvalidReceiptSignature(0))
+        ));
+
+        // (r) before (s): wrong input AND wrong executor → input.
+        let mut both = receipt_answering(&other_exec, &task);
+        both.input_commitment[0] ^= 0x01;
+        both.signature = other_exec.sign(&both.receipt_hash().0).to_bytes();
+        assert!(matches!(
+            anchor_block(&backend, &other_exec, 0, both),
+            Err(ApplyBlockError::ReceiptInputCommitmentMismatch(0))
+        ));
+
+        // (i) before (q)–(s): once anchored, a second receipt for the task
+        // — even from an unauthorised executor with the wrong input — is a
+        // duplicate, not a binding failure. First-anchored-wins is the
+        // v0.3 rule; nothing here re-decides it.
+        anchor_block(&backend, &ek, 0, receipt_answering(&ek, &task)).unwrap();
+        let mut second = receipt_answering(&other_exec, &task);
+        second.input_commitment[0] ^= 0x01;
+        second.signature = other_exec.sign(&second.receipt_hash().0).to_bytes();
+        assert!(matches!(
+            anchor_block(&backend, &other_exec, 0, second),
+            Err(ApplyBlockError::TaskIdAlreadyAnchored(0))
+        ));
+        // And a second, different but fully bound receipt from the named
+        // executor is likewise a duplicate.
+        let mut distinct = receipt_answering(&ek, &task);
+        distinct.output_commitment = [0x99u8; 32];
+        distinct.signature = ek.sign(&distinct.receipt_hash().0).to_bytes();
+        assert!(matches!(
+            anchor_block(&backend, &ek, 1, distinct),
+            Err(ApplyBlockError::TaskIdAlreadyAnchored(0))
+        ));
+    }
+
+    #[test]
+    fn corrupt_stored_task_is_a_storage_failure_not_an_unknown_task() {
+        // Bytes under a task_id that do not decode are consensus's own
+        // canonical encoding gone wrong: reported as a storage error, so a
+        // node never turns corruption into a protocol verdict.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = register_task(&backend, executor, [0x3Du8; 32], [0x1Cu8; 32]);
+        let task_id = task.task_id();
+        backend
+            .storage
+            .write_batch(vec![BatchOp::PutTask(task_id, vec![0xFF, 0x00])])
+            .unwrap();
+        let err = anchor_block(&backend, &ek, 0, receipt_answering(&ek, &task)).unwrap_err();
+        assert!(
+            matches!(&err, ApplyBlockError::Storage(msg) if msg.contains("corrupt task bytes")),
+            "{err}"
+        );
+    }
+
+    // ── RFC 0005 (q)–(s): admission mirrors consensus ─────────────────
+
+    #[tokio::test]
+    async fn admission_and_block_validation_agree_on_binding() {
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = register_task(&backend, executor, [0x40u8; 32], [0x1Cu8; 32]);
+        let squatter = SigningKey::from_bytes(&[0xE9u8; 32]);
+        fund(&backend, &squatter, 10);
+
+        // (q)
+        let unknown = signed_receipt_for(&ek, [0x7Cu8; 32], vec![], 1);
+        let err = backend.submit_transaction(signed_anchor_tx(&ek, 0, unknown)).await.unwrap_err();
+        assert!(err.to_string().contains("not a registered task"), "{err}");
+        // (r)
+        let mut wrong_input = receipt_answering(&ek, &task);
+        wrong_input.input_commitment[5] ^= 0x10;
+        wrong_input.signature = ek.sign(&wrong_input.receipt_hash().0).to_bytes();
+        let err = backend
+            .submit_transaction(signed_anchor_tx(&ek, 0, wrong_input))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("input_commitment does not match"),
+            "{err}"
+        );
+        // (s)
+        let err = backend
+            .submit_transaction(signed_anchor_tx(
+                &squatter,
+                0,
+                receipt_answering(&squatter, &task),
+            ))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("not authorised"), "{err}");
+        assert_eq!(backend.mempool.read().await.len(), 0);
+
+        // The bound receipt is admitted and included.
+        backend
+            .submit_transaction(signed_anchor_tx(&ek, 0, receipt_answering(&ek, &task)))
+            .await
+            .unwrap();
+        backend.produce_block().await.unwrap();
+        assert!(backend.storage.has_receipt(&task.task_id()).unwrap());
+
+        // Identical-bytes resubmission after inclusion: rejected as already
+        // anchored (RFC 0002 first-anchored-wins), so operational retry is
+        // lookup first, never blind resubmission (E §11.2).
+        let err = backend
+            .submit_transaction(signed_anchor_tx(&ek, 0, receipt_answering(&ek, &task)))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("already anchored"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn admission_accepts_receipt_behind_pending_task() {
+        // The same-block half at admission: a task pending in the mempool
+        // precedes its receipt in the produced block, so the receipt is
+        // admitted; a receipt whose task is neither stored nor pending is
+        // not.
+        let backend = make_backend();
+        backend.ensure_genesis().unwrap();
+        let ck = client_key();
+        let client = fund(&backend, &ck, 1);
+        let ek = executor_key();
+        let executor = fund(&backend, &ek, 10);
+        let task = task_for(client, executor, [0x41u8; 32], vec![7]);
+        let task_id = task.task_id();
+
+        let err = backend
+            .submit_transaction(signed_anchor_tx(&ek, 0, receipt_answering(&ek, &task)))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("not a registered task"), "{err}");
+
+        backend.submit_transaction(signed_task_tx(&ck, 0, task.clone())).await.unwrap();
+        backend
+            .submit_transaction(signed_anchor_tx(&ek, 0, receipt_answering(&ek, &task)))
+            .await
+            .unwrap();
+        assert_eq!(backend.mempool.read().await.len(), 2);
+        backend.produce_block().await.unwrap();
+        assert!(backend.storage.has_task(&task_id).unwrap());
+        assert!(backend.storage.has_receipt(&task_id).unwrap());
+        assert_eq!(backend.mempool.read().await.len(), 0);
+    }
+
+    // ── RFC 0005 §12: the neutral binding vectors drive consensus ─────
+
+    const BINDING_FIXTURE: &str =
+        include_str!("../../../test-vectors/compute-task/anchor-binding-v1.json");
+    const TASK_FIXTURE: &str =
+        include_str!("../../../test-vectors/compute-task/compute-task-v1.json");
+    const RECEIPT_FIXTURE: &str = include_str!("../../../test-vectors/receipt/receipt-v1.json");
+
+    fn fixture_hex(v: &serde_json::Value) -> Vec<u8> {
+        let s = v.as_str().expect("hex string");
+        assert!(!s.starts_with("0x"));
+        hex_decode(s)
+    }
+
+    fn hex_decode(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
+            .collect()
+    }
+
+    fn fixture_32(v: &serde_json::Value) -> [u8; 32] {
+        fixture_hex(v).try_into().expect("32 bytes")
+    }
+
+    /// The receipt executor of a binding vector, which rule (g) makes the
+    /// anchoring sender.
+    fn r_executor(v: &serde_json::Value) -> &serde_json::Value {
+        &v["receipt"]["executor"]
+    }
+
+    fn fixture_task(tdoc: &serde_json::Value, name: &str) -> ComputeTask {
+        let entry = tdoc["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"].as_str() == Some(name))
+            .unwrap_or_else(|| panic!("task vector {name}"));
+        let t = &entry["task"];
+        let spec = &t["execution_spec"];
+        let execution_spec = match spec["pattern"].as_str() {
+            Some("repeat") => {
+                let byte = fixture_hex(&spec["byte"]);
+                vec![byte[0]; spec["length"].as_u64().unwrap() as usize]
+            }
+            Some("literal") => fixture_hex(&spec["hex"]),
+            other => panic!("pattern {other:?}"),
+        };
+        let task = ComputeTask {
+            version: t["version"].as_u64().unwrap() as u8,
+            submitter: Address(fixture_32(&t["submitter"])),
+            executor: Address(fixture_32(&t["executor"])),
+            salt: fixture_32(&t["salt"]),
+            input_commitment: fixture_32(&t["input_commitment"]),
+            execution_spec,
+        };
+        assert_eq!(task.task_id(), fixture_32(&entry["expected"]["task_id"]));
+        task
+    }
+
+    #[test]
+    fn anchor_binding_vectors_drive_consensus() {
+        let bdoc: serde_json::Value = serde_json::from_str(BINDING_FIXTURE).unwrap();
+        let tdoc: serde_json::Value = serde_json::from_str(TASK_FIXTURE).unwrap();
+        let rdoc: serde_json::Value = serde_json::from_str(RECEIPT_FIXTURE).unwrap();
+        assert_eq!(bdoc["fixture_version"].as_u64(), Some(1));
+        let vectors = bdoc["vectors"].as_array().unwrap();
+        assert_eq!(vectors.len(), 5, "vector cardinality");
+
+        // Keys are resolved from the referenced fixtures, never restated.
+        let submitter_sk = SigningKey::from_bytes(&fixture_32(&rdoc["test_key"]["ed25519_seed"]));
+        let executor_sk =
+            SigningKey::from_bytes(&fixture_32(&tdoc["test_keys"]["executor"]["ed25519_seed"]));
+        let executor = Address(executor_sk.verifying_key().to_bytes());
+        let submitter = Address(submitter_sk.verifying_key().to_bytes());
+
+        let mut outcomes = std::collections::BTreeMap::new();
+        for v in vectors {
+            let name = v["name"].as_str().unwrap();
+            let backend = make_backend();
+            backend.ensure_genesis().unwrap();
+            fund(&backend, &submitter_sk, 10);
+
+            // Register the referenced task exactly as the fixture states it,
+            // committed by its submitter in a block of its own.
+            if let Some(task_name) = v["task_vector"].as_str() {
+                let task = fixture_task(&tdoc, task_name);
+                assert_eq!(task.submitter, submitter);
+                assert_eq!(task.executor, executor);
+                let block =
+                    build_valid_block(&backend, vec![signed_task_tx(&submitter_sk, 0, task)]);
+                backend.apply_block(&block).unwrap();
+            }
+
+            // The anchoring account sits at the nonce the vector pins (test
+            // seeding, as `fund` is), so the vector's bytes are exactly
+            // what enters consensus.
+            let mut anchoring = Account::new(Address(fixture_32(r_executor(v))));
+            anchoring.balance = 10;
+            anchoring.nonce = v["transaction"]["nonce"].as_u64().unwrap();
+            backend.storage.put_account(&anchoring.address, &anchoring).unwrap();
+
+            // Rebuild the receipt and transaction from the fixture fields;
+            // the pinned bytes, hash and signatures must be what production
+            // produces, and the transaction must verify.
+            let r = &v["receipt"];
+            let receipt = Receipt {
+                version: r["version"].as_u64().unwrap() as u8,
+                task_id: fixture_32(&r["task_id"]),
+                input_commitment: fixture_32(&r["input_commitment"]),
+                output_commitment: fixture_32(&r["output_commitment"]),
+                executor: Address(fixture_32(&r["executor"])),
+                metadata: vec![],
+                signature: fixture_hex(&v["expected"]["executor_signature"]).try_into().unwrap(),
+            };
+            assert_eq!(
+                receipt.receipt_hash().0,
+                fixture_32(&v["expected"]["receipt_hash"]),
+                "{name}: receipt hash"
+            );
+            assert!(
+                verify_receipt_signature(&receipt),
+                "{name}: receipt signature"
+            );
+            assert_eq!(
+                receipt.encode(),
+                fixture_hex(&v["expected"]["receipt_full_encoding"]),
+                "{name}: receipt encoding"
+            );
+            let tx = Transaction {
+                tx_type: TransactionType::AnchorReceipt,
+                sender: receipt.executor,
+                receiver: Address::zero(),
+                amount: 0,
+                nonce: v["transaction"]["nonce"].as_u64().unwrap(),
+                payload: TransactionPayload::AnchorReceipt(Box::new(receipt)),
+                signature: fixture_hex(&v["expected"]["transaction_signature"]).try_into().unwrap(),
+            };
+            assert!(tx.verify_signature(), "{name}: transaction signature");
+            assert_eq!(
+                tx.signing_payload(),
+                fixture_hex(&v["expected"]["signing_payload"]),
+                "{name}: signing payload"
+            );
+            assert_eq!(
+                tx.encode(),
+                fixture_hex(&v["expected"]["full_transaction"]),
+                "{name}: full encoding"
+            );
+            assert_eq!(
+                compute_tx_hash(&tx).0,
+                fixture_32(&v["expected"]["transaction_hash"]),
+                "{name}: transaction hash"
+            );
+
+            // The consensus verdict is the one the fixture states.
+            let block = build_valid_block(&backend, vec![tx]);
+            let result = backend.apply_block(&block);
+            let expected_valid = v["consensus"]["valid"].as_bool().unwrap();
+            let rule = v["consensus"]["rule"].as_str();
+            match (&result, rule) {
+                (Ok(_), None) => assert!(expected_valid, "{name}"),
+                (Err(ApplyBlockError::TaskNotRegistered(0)), Some("q"))
+                | (Err(ApplyBlockError::ReceiptInputCommitmentMismatch(0)), Some("r"))
+                | (Err(ApplyBlockError::ReceiptExecutorNotAuthorised(0)), Some("s")) => {
+                    assert!(!expected_valid, "{name}");
+                }
+                (other, rule) => panic!("{name}: got {other:?}, fixture expects rule {rule:?}"),
+            }
+            outcomes.insert(name.to_string(), result.is_ok());
+        }
+        // Exactly the outcomes RFC 0005 §12 asks for: one bound receipt per
+        // task shape, and one rejection per rule.
+        assert_eq!(outcomes.values().filter(|ok| **ok).count(), 2);
+        assert_eq!(outcomes.values().filter(|ok| !**ok).count(), 3);
     }
 }

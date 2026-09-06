@@ -175,9 +175,11 @@ async fn main() {
 }
 
 /// Builds a fully valid `AnchorReceipt` transaction from the dev account
-/// (the pre-funded key `[0xAA; 32]`, matching `ensure_genesis`). Returns
-/// the transaction as RPC JSON, the task id, and the canonical SCALE
-/// receipt bytes for the replay comparison.
+/// (the pre-funded key `[0xAA; 32]`, matching `ensure_genesis`) answering
+/// the task `task_id` that `build_task_tx` committed: same
+/// `input_commitment`, and the dev key as the executor the task named
+/// (RFC 0005 rules q–s). Returns the transaction as RPC JSON, the task id,
+/// and the canonical SCALE receipt bytes for the replay comparison.
 fn build_anchor_tx(nonce: u64, task_id: [u8; 32]) -> (Value, [u8; 32], Vec<u8>) {
     use ed25519_dalek::{Signer, SigningKey};
     use mbongo_core::{Address, Receipt, Transaction, TransactionPayload, TransactionType};
@@ -231,7 +233,9 @@ fn build_task_tx(nonce: u64, salt: [u8; 32]) -> (Value, [u8; 32], Vec<u8>) {
     let task = ComputeTask {
         version: COMPUTE_TASK_VERSION,
         submitter: sender,
-        executor: Address([0xE1u8; 32]),
+        // The dev key answers its own task: it is the only pre-funded
+        // account, and the anchor below must come from the named executor.
+        executor: sender,
         salt,
         input_commitment: [0x10u8; 32],
         execution_spec: b"replay-harness".to_vec(),
@@ -263,22 +267,22 @@ async fn run_replay(client: &Client, producer_dir: &std::path::Path) -> Result<(
     wait_for_rpc(client).await?;
     println!("  Producer RPC ready");
 
-    // Submit one AnchorReceipt from the dev account so the chain carries
-    // receipt state (RFC 0002 Phase 3 replay coverage).
-    let (anchor_tx_json, anchor_task_id, anchor_receipt_bytes) = build_anchor_tx(0, [0x5Eu8; 32]);
-    rpc_call(client, "submit_transaction", Some(anchor_tx_json))
-        .await
-        .map_err(|e| format!("anchor submission failed: {e}"))?;
-    println!("  AnchorReceipt submitted (task_id 0x5e..5e)");
-
-    // Submit one ComputeTask from the dev account (nonce 1, behind the
-    // anchor) so the chain carries task state (RFC 0005 §4 replay
-    // coverage: the tasks index is derived from blocks).
-    let (task_tx_json, compute_task_id, compute_task_bytes) = build_task_tx(1, [0x5Fu8; 32]);
+    // Submit one ComputeTask from the dev account (nonce 0) so the chain
+    // carries task state (RFC 0005 §4 replay coverage: the tasks index is
+    // derived from blocks), then the AnchorReceipt answering it (nonce 1,
+    // behind the task: rules q–s need the task registered first).
+    let (task_tx_json, compute_task_id, compute_task_bytes) = build_task_tx(0, [0x5Fu8; 32]);
     rpc_call(client, "submit_transaction", Some(task_tx_json))
         .await
         .map_err(|e| format!("compute task submission failed: {e}"))?;
     println!("  ComputeTask submitted (salt 0x5f..5f)");
+
+    let (anchor_tx_json, anchor_task_id, anchor_receipt_bytes) =
+        build_anchor_tx(1, compute_task_id);
+    rpc_call(client, "submit_transaction", Some(anchor_tx_json))
+        .await
+        .map_err(|e| format!("anchor submission failed: {e}"))?;
+    println!("  AnchorReceipt submitted (bound to the committed task)");
 
     // Bounded height polling: succeed once the chain reaches MIN_HEIGHT.
     println!(

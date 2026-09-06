@@ -360,8 +360,48 @@ fn extract_node_name_from_cmdline(cmdline: &str) -> String {
 
 // ── Receipt traffic (RFC 0002 Phase 3) ──────────────────────────────────
 
+/// Builds a fully valid `ComputeTask` transaction from the dev account
+/// (`[0xAA; 32]`, pre-funded by `ensure_genesis`) naming that same key as
+/// executor, as RPC JSON, together with the derived task id the matching
+/// anchor must carry (RFC 0005 rules q–s).
+fn build_task_tx(nonce: u64, salt: [u8; 32]) -> (Value, [u8; 32]) {
+    use ed25519_dalek::{Signer, SigningKey};
+    use mbongo_core::{
+        Address, ComputeTask, Transaction, TransactionPayload, TransactionType,
+        COMPUTE_TASK_VERSION,
+    };
+
+    let sk = SigningKey::from_bytes(&[0xAAu8; 32]);
+    let sender = Address(sk.verifying_key().to_bytes());
+    let task = ComputeTask {
+        version: COMPUTE_TASK_VERSION,
+        submitter: sender,
+        executor: sender,
+        salt,
+        input_commitment: [0x10u8; 32],
+        execution_spec: b"devnet-harness".to_vec(),
+    };
+    let task_id = task.task_id();
+    let mut tx = Transaction {
+        tx_type: TransactionType::ComputeTask,
+        sender,
+        receiver: Address::zero(),
+        amount: 0,
+        nonce,
+        payload: TransactionPayload::ComputeTask(Box::new(task)),
+        signature: [0u8; 64],
+    };
+    tx.signature = sk.sign(&tx.signing_payload()).to_bytes();
+    (
+        serde_json::to_value(&tx).expect("transaction serializes"),
+        task_id,
+    )
+}
+
 /// Builds a fully valid `AnchorReceipt` transaction from the dev account
-/// (`[0xAA; 32]`, pre-funded by `ensure_genesis`) as RPC JSON.
+/// (`[0xAA; 32]`, pre-funded by `ensure_genesis`) as RPC JSON, answering
+/// the task `build_task_tx` committed under `task_id`: same
+/// `input_commitment`, and the dev key as the named executor.
 fn build_anchor_tx(nonce: u64, task_id: [u8; 32]) -> Value {
     use ed25519_dalek::{Signer, SigningKey};
     use mbongo_core::{Address, Receipt, Transaction, TransactionPayload, TransactionType};
@@ -603,15 +643,20 @@ async fn run_harness(client: &Client, data_dirs: &[PathBuf]) -> Result<(), Strin
     );
     let phase2_height = await_convergence(client, &nodes, MIN_HEIGHT, poll, conv_timeout).await?;
 
-    // Receipt traffic (RFC 0002 Phase 3): anchor task A from the dev
-    // account and require it to be visible in a block on every node.
-    let task_a = [0xA1u8; 32];
+    // Receipt traffic (RFC 0002 Phase 3, RFC 0005 q–s): commit task A
+    // from the dev account, anchor its receipt, and require the anchor to
+    // be visible in a block on every node.
+    let (task_a_json, task_a) = build_task_tx(0, [0xA1u8; 32]);
+    println!("Phase 2: Submitting ComputeTask (task A)...");
+    rpc_call_with_params(client, &nodes[0], "submit_transaction", Some(task_a_json))
+        .await
+        .map_err(|e| format!("task A submission failed: {e}"))?;
     println!("Phase 2: Submitting AnchorReceipt (task A)...");
     rpc_call_with_params(
         client,
         &nodes[0],
         "submit_transaction",
-        Some(build_anchor_tx(0, task_a)),
+        Some(build_anchor_tx(1, task_a)),
     )
     .await
     .map_err(|e| format!("anchor A submission failed: {e}"))?;
@@ -653,7 +698,7 @@ async fn run_harness(client: &Client, data_dirs: &[PathBuf]) -> Result<(), Strin
         client,
         &nodes[0],
         "submit_transaction",
-        Some(build_anchor_tx(1, task_a)),
+        Some(build_anchor_tx(2, task_a)),
     )
     .await
     {
@@ -668,15 +713,20 @@ async fn run_harness(client: &Client, data_dirs: &[PathBuf]) -> Result<(), Strin
         Err(e) => return Err(format!("unexpected rejection for duplicate anchor: {e}")),
     }
 
-    // Post-restart anchoring still works end-to-end: task B converges on
-    // all nodes (including followers syncing the new block).
-    let task_b = [0xB2u8; 32];
+    // Post-restart task commitment and anchoring still work end-to-end:
+    // task B converges on all nodes (including followers syncing the new
+    // block). The rejected duplicate above consumed no nonce.
+    let (task_b_json, task_b) = build_task_tx(2, [0xB2u8; 32]);
+    println!("Phase 3: Submitting ComputeTask (task B)...");
+    rpc_call_with_params(client, &nodes[0], "submit_transaction", Some(task_b_json))
+        .await
+        .map_err(|e| format!("task B submission failed: {e}"))?;
     println!("Phase 3: Submitting AnchorReceipt (task B)...");
     rpc_call_with_params(
         client,
         &nodes[0],
         "submit_transaction",
-        Some(build_anchor_tx(1, task_b)),
+        Some(build_anchor_tx(3, task_b)),
     )
     .await
     .map_err(|e| format!("anchor B submission failed: {e}"))?;

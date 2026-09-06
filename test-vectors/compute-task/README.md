@@ -141,6 +141,51 @@ agree with values it did not produce. The transaction hash rule is mirrored in
 the test rather than called, because `compute_tx_hash` in
 `crates/mbongo-node/src/backend.rs` is `pub(crate)`.
 
+## Anchoring-binding vectors (`anchor-binding-v1.json`)
+
+RFC 0005 §3 adds three rules to `AnchorReceipt` validation, after RFC 0002's
+(a)–(j):
+
+```
+(q)  a task with receipt.task_id exists in prior chain state or earlier in the block
+(r)  receipt.input_commitment == task.input_commitment
+(s)  receipt.executor == task.executor
+```
+
+They add **no encoding**. The receipt bytes follow `../receipt/receipt-v1.json`
+and the transaction bytes follow `../transaction/anchor-receipt-v1.json`,
+both unchanged; no receipt field is added or changed. What is new is the
+*relation* between a receipt and a registered task, so `anchor-binding-v1.json`
+holds one vector per outcome RFC 0005 §12 asks for:
+
+| vector | task_vector | verdict |
+|---|---|---|
+| `bound-named-executor` | `canonical` | valid |
+| `bound-maximal-task` | `spec-max-1024` | valid |
+| `unknown-task` | none registered | rejected, rule (q) |
+| `input-commitment-mismatch` | `canonical` | rejected, rule (r) |
+| `executor-not-named` | `canonical` | rejected, rule (s) — the submitter answering its own task, the squatting receipt of RFC 0005 §9.1 |
+
+Each vector names its task from `compute-task-v1.json` (identities are never
+restated), gives the receipt fields, and pins the receipt hash, the executor
+signature, the full receipt encoding, the anchoring transaction's signing
+payload, signature, full encoding and hash, plus the consensus verdict and the
+rule that decides it. The anchoring sender is the receipt's executor, which
+rule (g) requires; `executor-not-named` is therefore authenticated and still
+unauthorised.
+
+The `unknown-task` vector is exactly a v0.3-valid anchor: before RFC 0005 it
+would have been accepted. That is the validity break RFC 0005 §5.2 records;
+the wire format did not change.
+
+`crates/mbongo-node/src/backend.rs` (`anchor_binding_vectors_drive_consensus`)
+registers each referenced task in a block, rebuilds the receipt and transaction
+from the fixture fields, checks the pinned bytes, hash and signatures against
+production, and applies the anchor: the verdict must be the one the fixture
+states. Expected values were derived the same way as the task vectors — hand
+SCALE, independent BLAKE3 and Ed25519 — with the two task fixtures as the only
+machine inputs.
+
 ## Key material
 
 Two TEST ONLY keys, both public constants, never production keys:
