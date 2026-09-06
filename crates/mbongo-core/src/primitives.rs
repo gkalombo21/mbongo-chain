@@ -102,7 +102,9 @@ pub enum TransactionType {
     /// Simple transfer from sender to receiver of `amount`.
     #[codec(index = 0)]
     Transfer,
-    /// Compute task assignment/payment.
+    /// Commit a compute task (RFC 0005). Carried in
+    /// [`TransactionPayload::ComputeTask`]; the legacy `None`-payload form
+    /// is rejected by rule (k). Keeps the codec index frozen at v0.3.
     #[codec(index = 1)]
     ComputeTask,
     /// Stake `amount` to validator or staking contract.
@@ -123,8 +125,8 @@ pub enum TransactionType {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Encode, Decode)]
 #[allow(clippy::cast_possible_truncation)] // codec derive casts the explicit index to u8
 pub enum TransactionPayload {
-    /// No payload. Required for `Transfer`, `ComputeTask`, and `Stake`
-    /// transactions. Encodes as a single `0x00` byte.
+    /// No payload. Required for `Transfer` and `Stake` transactions.
+    /// Encodes as a single `0x00` byte.
     #[codec(index = 0)]
     None,
     /// A receipt to anchor. Required for `AnchorReceipt` transactions.
@@ -133,6 +135,11 @@ pub enum TransactionPayload {
     /// exactly `0x01` followed by the canonical receipt bytes.
     #[codec(index = 1)]
     AnchorReceipt(Box<crate::receipt::Receipt>),
+    /// A compute task to commit (RFC 0005 §2.7). Required for
+    /// `ComputeTask` transactions. Index 2, explicit; the wire format is
+    /// exactly `0x02` followed by the canonical task bytes.
+    #[codec(index = 2)]
+    ComputeTask(Box<crate::compute_task::ComputeTask>),
 }
 
 /// Transaction structure (SCALE serializable) with ed25519 signature.

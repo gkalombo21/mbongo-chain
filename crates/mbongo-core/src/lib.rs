@@ -35,11 +35,16 @@
 #![warn(clippy::pedantic)]
 
 pub mod account;
+pub mod compute_task;
 pub mod crypto;
 mod primitives;
 pub mod receipt;
 
 pub use account::{Account, AccountError};
+pub use compute_task::{
+    ComputeTask, COMPUTE_TASK_VERSION, DOMAIN_TASK, MAX_COMPUTE_TASK_BYTES,
+    MAX_EXECUTION_SPEC_BYTES, MAX_TASK_ID_PREIMAGE_BYTES,
+};
 pub use primitives::{
     compute_transactions_root, Address, Block, BlockBody, BlockHeader, Hash, Transaction,
     TransactionPayload, TransactionType,
@@ -208,6 +213,19 @@ mod tests {
         }
     }
 
+    /// Sample task for payload tests (any well-formed envelope works;
+    /// consensus validity is irrelevant to encoding tests).
+    fn sample_task() -> ComputeTask {
+        ComputeTask {
+            version: 1,
+            submitter: Address([0x66u8; 32]),
+            executor: Address([0x77u8; 32]),
+            salt: [0x88u8; 32],
+            input_commitment: [0x99u8; 32],
+            execution_spec: vec![0xC0, 0xDE],
+        }
+    }
+
     fn sample_transfer() -> Transaction {
         Transaction {
             tx_type: TransactionType::Transfer,
@@ -235,12 +253,36 @@ mod tests {
             expected
         );
 
+        // TransactionPayload::ComputeTask encodes as 0x02 followed by the
+        // canonical task bytes (RFC 0005 §2.7). The v0.3 indexes above
+        // are untouched: 0 and 1 keep their meaning byte-for-byte.
+        let task = sample_task();
+        let mut expected = vec![0x02];
+        expected.extend_from_slice(&task.encode());
+        assert_eq!(
+            TransactionPayload::ComputeTask(Box::new(task)).encode(),
+            expected
+        );
+
         // TransactionType indexes are pinned: 0..=2 match v0.2 implicit
-        // order byte-for-byte, 3 is the v0.3 addition.
+        // order byte-for-byte, 3 is the v0.3 addition. RFC 0005 §2.7 keeps
+        // ComputeTask at 1 rather than repurposing a frozen discriminant.
         assert_eq!(TransactionType::Transfer.encode(), vec![0x00]);
         assert_eq!(TransactionType::ComputeTask.encode(), vec![0x01]);
         assert_eq!(TransactionType::Stake.encode(), vec![0x02]);
         assert_eq!(TransactionType::AnchorReceipt.encode(), vec![0x03]);
+    }
+
+    #[test]
+    fn transaction_payload_unknown_discriminant_rejected() {
+        // Index 3 is unassigned: bytes claiming it must fail closed
+        // rather than decode as anything.
+        let mut bytes = vec![0x03];
+        bytes.extend_from_slice(&sample_task().encode());
+        assert!(TransactionPayload::decode(&mut &bytes[..]).is_err());
+        // A ComputeTask discriminant with a truncated body fails too.
+        let bytes = [0x02u8, 0x01];
+        assert!(TransactionPayload::decode(&mut &bytes[..]).is_err());
     }
 
     #[test]
@@ -257,6 +299,19 @@ mod tests {
 
         let none = json::to_value(TransactionPayload::None).unwrap();
         assert_eq!(none, json::json!("None"));
+
+        // Same rule for the task: {"ComputeTask": {<task fields>}}.
+        let v = json::to_value(TransactionPayload::ComputeTask(Box::new(sample_task()))).unwrap();
+        assert_eq!(v["ComputeTask"]["version"], 1);
+        assert_eq!(
+            v["ComputeTask"]["execution_spec"],
+            json::json!([0xC0, 0xDE])
+        );
+        let back: TransactionPayload = json::from_value(v).unwrap();
+        assert_eq!(
+            back,
+            TransactionPayload::ComputeTask(Box::new(sample_task()))
+        );
     }
 
     #[test]
@@ -264,11 +319,50 @@ mod tests {
         for payload in [
             TransactionPayload::None,
             TransactionPayload::AnchorReceipt(Box::new(sample_receipt())),
+            TransactionPayload::ComputeTask(Box::new(sample_task())),
         ] {
             let enc = payload.encode();
             let dec = TransactionPayload::decode(&mut &enc[..]).unwrap();
             assert_eq!(dec, payload);
         }
+    }
+
+    #[test]
+    fn transaction_scale_and_serde_roundtrip_with_compute_task_payload() {
+        let tx = Transaction {
+            tx_type: TransactionType::ComputeTask,
+            sender: Address([3u8; 32]),
+            receiver: Address::zero(),
+            amount: 0,
+            nonce: 9,
+            payload: TransactionPayload::ComputeTask(Box::new(sample_task())),
+            signature: [5u8; 64],
+        };
+        let enc = tx.encode();
+        assert_eq!(Transaction::decode(&mut &enc[..]).unwrap(), tx);
+        let s = json::to_string(&tx).unwrap();
+        assert_eq!(json::from_str::<Transaction>(&s).unwrap(), tx);
+        // The signing payload is the strict prefix before the signature,
+        // and the task bytes begin at the same fixed offset as a receipt
+        // would: 1 + 32 + 32 + 16 + 8 + 1 = 90.
+        let payload = tx.signing_payload();
+        assert_eq!(&enc[..payload.len()], payload.as_slice());
+        assert_eq!(payload[0], 0x01);
+        assert_eq!(payload[89], 0x02);
+        assert_eq!(&payload[90..], sample_task().encode().as_slice());
+    }
+
+    #[test]
+    fn existing_payload_encodings_are_unchanged_by_the_new_variant() {
+        // The v0.3 vectors are pinned elsewhere; this guards the exact
+        // bytes of both pre-existing variants against any enum reshuffle.
+        assert_eq!(TransactionPayload::None.encode(), vec![0x00]);
+        let receipt = sample_receipt();
+        let enc = TransactionPayload::AnchorReceipt(Box::new(receipt.clone())).encode();
+        assert_eq!(enc[0], 0x01);
+        assert_eq!(&enc[1..], receipt.encode().as_slice());
+        // A transfer still encodes to exactly 154 bytes.
+        assert_eq!(sample_transfer().encode().len(), 154);
     }
 
     #[test]

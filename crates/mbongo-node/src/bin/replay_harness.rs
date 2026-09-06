@@ -213,6 +213,47 @@ fn build_anchor_tx(nonce: u64, task_id: [u8; 32]) -> (Value, [u8; 32], Vec<u8>) 
     (tx_json, task_id, receipt_bytes)
 }
 
+/// Builds a fully valid `ComputeTask` transaction from the dev account
+/// (RFC 0005 §2.8: amount 0, zero receiver, `submitter == sender`).
+/// Returns the transaction as RPC JSON, the derived `task_id`, and the
+/// canonical SCALE task bytes for the replay comparison.
+fn build_task_tx(nonce: u64, salt: [u8; 32]) -> (Value, [u8; 32], Vec<u8>) {
+    use ed25519_dalek::{Signer, SigningKey};
+    use mbongo_core::{
+        Address, ComputeTask, Transaction, TransactionPayload, TransactionType,
+        COMPUTE_TASK_VERSION,
+    };
+    use parity_scale_codec::Encode;
+
+    let sk = SigningKey::from_bytes(&[0xAAu8; 32]);
+    let sender = Address(sk.verifying_key().to_bytes());
+
+    let task = ComputeTask {
+        version: COMPUTE_TASK_VERSION,
+        submitter: sender,
+        executor: Address([0xE1u8; 32]),
+        salt,
+        input_commitment: [0x10u8; 32],
+        execution_spec: b"replay-harness".to_vec(),
+    };
+    let task_id = task.task_id();
+    let task_bytes = task.encode();
+
+    let mut tx = Transaction {
+        tx_type: TransactionType::ComputeTask,
+        sender,
+        receiver: Address::zero(),
+        amount: 0,
+        nonce,
+        payload: TransactionPayload::ComputeTask(Box::new(task)),
+        signature: [0u8; 64],
+    };
+    tx.signature = sk.sign(&tx.signing_payload()).to_bytes();
+
+    let tx_json = serde_json::to_value(&tx).expect("transaction serializes");
+    (tx_json, task_id, task_bytes)
+}
+
 async fn run_replay(client: &Client, producer_dir: &std::path::Path) -> Result<(), String> {
     // ── Phase A: Produce chain ──────────────────────────────────────────
 
@@ -229,6 +270,15 @@ async fn run_replay(client: &Client, producer_dir: &std::path::Path) -> Result<(
         .await
         .map_err(|e| format!("anchor submission failed: {e}"))?;
     println!("  AnchorReceipt submitted (task_id 0x5e..5e)");
+
+    // Submit one ComputeTask from the dev account (nonce 1, behind the
+    // anchor) so the chain carries task state (RFC 0005 §4 replay
+    // coverage: the tasks index is derived from blocks).
+    let (task_tx_json, compute_task_id, compute_task_bytes) = build_task_tx(1, [0x5Fu8; 32]);
+    rpc_call(client, "submit_transaction", Some(task_tx_json))
+        .await
+        .map_err(|e| format!("compute task submission failed: {e}"))?;
+    println!("  ComputeTask submitted (salt 0x5f..5f)");
 
     // Bounded height polling: succeed once the chain reaches MIN_HEIGHT.
     println!(
@@ -368,6 +418,7 @@ async fn run_replay(client: &Client, producer_dir: &std::path::Path) -> Result<(
     // We're testing that the exported data, when stored, produces the same tip.
 
     let mut replayed_receipts: u64 = 0;
+    let mut replayed_tasks: u64 = 0;
     for (i, block) in exported_blocks.iter().enumerate().skip(1) {
         let block_hash = compute_block_hash(block);
 
@@ -394,23 +445,31 @@ async fn run_replay(client: &Client, producer_dir: &std::path::Path) -> Result<(
             ));
         }
 
-        // Reconstruct receipt state: the receipts index is fully derived
-        // from chain blocks (RFC 0002 §5), so replaying a block anchors
-        // the canonical SCALE bytes of every embedded receipt.
+        // Reconstruct derived state: the receipts index (RFC 0002 §5) and
+        // the tasks index (RFC 0005 §4) are fully derived from chain
+        // blocks, so replaying a block stores the canonical SCALE bytes
+        // of every embedded receipt and task under its task_id.
         {
             use mbongo_core::TransactionPayload;
             use mbongo_storage::BatchOp;
             use parity_scale_codec::Encode;
-            let mut receipt_ops = Vec::new();
+            let mut derived_ops = Vec::new();
             for tx in &block.body.transactions {
-                if let TransactionPayload::AnchorReceipt(receipt) = &tx.payload {
-                    receipt_ops.push(BatchOp::PutReceipt(receipt.task_id, receipt.encode()));
-                    replayed_receipts += 1;
+                match &tx.payload {
+                    TransactionPayload::AnchorReceipt(receipt) => {
+                        derived_ops.push(BatchOp::PutReceipt(receipt.task_id, receipt.encode()));
+                        replayed_receipts += 1;
+                    }
+                    TransactionPayload::ComputeTask(task) => {
+                        derived_ops.push(BatchOp::PutTask(task.task_id(), task.encode()));
+                        replayed_tasks += 1;
+                    }
+                    TransactionPayload::None => {}
                 }
             }
-            if !receipt_ops.is_empty() {
+            if !derived_ops.is_empty() {
                 replay_storage
-                    .write_batch(receipt_ops)
+                    .write_batch(derived_ops)
                     .map_err(|e| format!("storage error: {e}"))?;
             }
         }
@@ -428,6 +487,7 @@ async fn run_replay(client: &Client, producer_dir: &std::path::Path) -> Result<(
         }
     }
     println!("  Replayed {replayed_receipts} anchored receipt(s)");
+    println!("  Replayed {replayed_tasks} committed task(s)");
 
     println!("  Phase C: DONE\n");
 
@@ -484,6 +544,27 @@ async fn run_replay(client: &Client, producer_dir: &std::path::Path) -> Result<(
         return Err("replayed receipt bytes differ from canonical encoding".to_string());
     }
     println!("  Receipt state: anchored receipt reproduced byte-for-byte");
+
+    // Task state comparison (RFC 0005 §4): the submitted task must have
+    // been included by the producer, and the replayed task bytes must
+    // equal the canonical SCALE encoding submitted.
+    if replayed_tasks == 0 {
+        return Err("submitted ComputeTask was not included in any exported block".to_string());
+    }
+    if !replay_storage
+        .has_task(&compute_task_id)
+        .map_err(|e| format!("storage error: {e}"))?
+    {
+        return Err("replayed chain is missing the committed task".to_string());
+    }
+    let replayed_task = replay_storage
+        .get_task(&compute_task_id)
+        .map_err(|e| format!("storage error: {e}"))?
+        .ok_or("committed task bytes missing after replay")?;
+    if replayed_task != compute_task_bytes {
+        return Err("replayed task bytes differ from canonical encoding".to_string());
+    }
+    println!("  Task state: committed task reproduced byte-for-byte");
 
     println!("  Phase D: PASS");
     Ok(())
