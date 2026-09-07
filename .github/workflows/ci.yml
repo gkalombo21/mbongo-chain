@@ -49,6 +49,13 @@ jobs:
       - name: Run reference compute harness
         run: cargo run -p mbongo-compute --bin compute_harness
 
+      # Mbongo Compute Conformance (compute-conformance-v1): the named,
+      # reusable privacy / authorization / lifecycle contract every compute
+      # implementation must satisfy, run against the reference implementation.
+      # A required case that fails or cannot be driven fails this step.
+      - name: Mbongo Compute Conformance
+        run: cargo run -p mbongo-compute --bin compute_conformance
+
   # ---------------------------------------------------------
   # Devnet Convergence (run only on push to dev)
   # ---------------------------------------------------------

@@ -116,6 +116,10 @@ Logs carry identifiers and outcomes: task ids, executor addresses, instance, ses
 
 `execution::ConfidentialExtension` names the one step a confidential profile changes — the content key released only to an attested environment, the output encrypted inside it — and is not implemented. Nothing about the task, the receipt, the capability or the lease would change. The first worker is ordinary execution, and TEE is not required.
 
+## Conformance
+
+This implementation passes [Mbongo Compute Conformance](compute-conformance.md) (`compute-conformance-v1`, 38 cases) through its adapter `conformance::reference::ReferenceSubject`; CI runs it as the step *Mbongo Compute Conformance*. The suite, not this document, is the reusable statement of what a future implementation must do.
+
 ## Limitations
 
 - In-memory data plane and in-process control plane; no persistence across process restart except the control plane's `DurableState` snapshot.
