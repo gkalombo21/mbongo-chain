@@ -3,7 +3,7 @@
 **Protocol authority:** [`PROTOCOL_LOCK_v0.4.md`](../specs/PROTOCOL_LOCK_v0.4.md) (FROZEN)
 **RPC authority:** [`rpc_v0.3.md`](../specs/rpc_v0.3.md) (FROZEN)
 **Storage schema:** 3
-**Source:** the `v0.4-devnet-stable` tag — the release commit that carries this runbook, RFC 0005 at Released, PROTOCOL_LOCK_v0.4 and `@mbongo/sdk` 0.2.0; `dev` at or after it
+**Source:** the `v0.4-devnet-stable` tag @ `fcec8ddc7b06247460e04db987de08232992e2fc` — the release commit carrying RFC 0005 at Released, PROTOCOL_LOCK_v0.4 and `@mbongo/sdk` 0.2.0; `dev` at or after it
 **Profile:** LOCAL / DEVNET REFERENCE PROFILE — three native `mbongo-node` processes on one host, or the three-container Docker devnet. **Not a production topology.**
 **Supersedes:** [`DEVNET_V0.3_OPERATIONS.md`](./DEVNET_V0.3_OPERATIONS.md) for everything Compute-related. That runbook's PowerShell deployment stays pinned to `v0.3-devnet-stable` and cannot run v0.4 (see [Known limitations](#known-limitations)).
 
@@ -91,7 +91,7 @@ forward**, and no in-place migration of a devnet is offered or supported.
 |---|---|---|---|
 | **Harness** (this runbook's primary path) | `<temp>/mbongo_compute_vertical/{producer,follower-a,follower-b}` | the harness deletes **only** that directory at start and end, and prints its path | cannot occur: the directory is created fresh on every run |
 | **Docker devnet** | container writable layers; no volumes | `make devnet-down` removes containers and network; the next `make devnet-up` is fresh genesis | cannot persist across `down`; `up` without `down` reuses the running containers, which are already v0.4 |
-| **PowerShell persistent devnet** (`scripts/devnet/*.ps1`) | `C:\mbongo-devnet\v0.3\<node>\data` | `reset-devnet.ps1 -ConfirmReset` + typed root, after a verified backup | **refused**: `start-devnet.ps1` only runs the pinned `v0.3-devnet-stable` build and refuses any data directory whose `deployment.json` names another tag/commit, so a v0.3 directory can never be picked up as v0.4 by that tooling |
+| **PowerShell persistent devnet** (`scripts/devnet/*.ps1`, pinned to `v0.4-devnet-stable` @ `fcec8ddc`) | `C:\mbongo-devnet\v0.4\<node>\data` (or `MBONGO_DEVNET_ROOT`) | `reset-devnet.ps1 -ConfirmReset` + typed root, after a verified backup | **refused**: `start-devnet.ps1` runs only the pinned build and refuses any data directory whose `deployment.json` names another tag or commit (a v0.3 directory included); `reset-devnet.ps1` refuses too, so such a directory must be moved aside by hand |
 | Production | — | — | out of scope; PROTOCOL_LOCK_v0.4 claims no production migration |
 
 A v0.4 binary **can** open a v0.3 data directory (the storage migration is
@@ -116,6 +116,33 @@ step: every node answers `ping`; every node printed the v0.4 `Protocol:`
 line; all three converge to the same height and tip hash at height ≥ 3
 (the same `await_convergence` primitive the devnet harness and the Docker
 probe use). There is no arbitrary sleep anywhere in readiness.
+
+### PowerShell persistent devnet (Windows, native processes)
+
+The persistent three-node deployment under `scripts/devnet/` is pinned to
+`v0.4-devnet-stable` @ `fcec8ddc` and lives outside the repository
+(default `C:\mbongo-devnet\v0.4`, or `MBONGO_DEVNET_ROOT`). Its procedures
+are those of the v0.3 runbook, unchanged in mechanism: `start-devnet.ps1`
+builds the tag in a clean worktree on first start, verifies commit, tag and
+binary hash on every start, writes a `deployment.json` provenance marker per
+node and refuses any data directory that carries another deployment's
+marker; `status-devnet.ps1`, `stop-devnet.ps1`, `backup-devnet.ps1`,
+`reset-devnet.ps1 -ConfirmReset` (verified backup first, typed root) are as
+documented there. A fresh directory starts at genesis with storage schema 3.
+Ports 9944-9946 / 8080-8082 / 30333-30335.
+
+```powershell
+cd scripts\devnet
+.\start-devnet.ps1     # builds v0.4-devnet-stable once, then starts producer + followers
+.\status-devnet.ps1
+.\stop-devnet.ps1
+```
+
+Not v0.4-usable from that toolset: `submit-receipt.ps1` and
+`build-receipt-tool.ps1`, which build the `submit_receipt` example — it
+submits an **unbound** receipt, which v0.4 rejects on rule (q). Use the
+vertical harness for a Compute smoke test; re-basing the receipt tool on a
+committed task is tracked under #50.
 
 ### Docker profile (ephemeral)
 
@@ -303,11 +330,9 @@ Operational mitigation in this runbook:
 
 - **Published SDK.** `@mbongo/sdk` 0.1.0 is not v0.4-capable; 0.2.0 is. The
   vertical uses the workspace source regardless.
-- **PowerShell persistent devnet is v0.3-pinned.** `devnet-config.ps1` pins
-  `v0.3-devnet-stable`; there is no v0.4 tag yet, and the scripts verify the
-  tag by exact match. Re-pinning them is a follow-up once
-  `v0.4-devnet-stable` exists. Until then that deployment cannot run v0.4,
-  and it cannot mistake a v0.3 directory for one.
+- **PowerShell receipt tool.** `submit-receipt.ps1` builds an unbound
+  receipt and cannot anchor under v0.4 (rule q); the deployment itself is
+  pinned to `v0.4-devnet-stable`.
 - **In-memory data plane.** Private inputs and results do not survive a
   process restart. Chain state does.
 - **Single process for control plane, data plane and worker.** No network

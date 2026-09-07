@@ -15,7 +15,7 @@ document disagrees with one of these, this table wins.
 | Subject | Authority | Status |
 |---|---|---|
 | Project vision and scope | [`VISION_v1.md`](VISION_v1.md) | NORMATIVE |
-| Frozen protocol surfaces, versioning | [`specs/PROTOCOL_LOCK_v0.4.md`](specs/PROTOCOL_LOCK_v0.4.md) | NORMATIVE (FROZEN; tag `v0.4-devnet-stable` pending) |
+| Frozen protocol surfaces, versioning | [`specs/PROTOCOL_LOCK_v0.4.md`](specs/PROTOCOL_LOCK_v0.4.md) | NORMATIVE (FROZEN; tag `v0.4-devnet-stable` @ `fcec8ddc`; SDK `@mbongo/sdk` 0.2.0) |
 | Protocol surfaces before RFC 0005 | [`specs/PROTOCOL_LOCK_v0.3.md`](specs/PROTOCOL_LOCK_v0.3.md) | SUPERSEDED (historical record, kept intact) |
 | JSON-RPC contract | [`specs/rpc_v0.3.md`](specs/rpc_v0.3.md) | NORMATIVE (FROZEN — v0.2 plus the `ComputeTask` payload variant; independently audited by the v0.4 lock gate) |
 | JSON-RPC contract before RFC 0005 | [`specs/rpc_v0.2.md`](specs/rpc_v0.2.md) | SUPERSEDED (FROZEN, kept intact) |

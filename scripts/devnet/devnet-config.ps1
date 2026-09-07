@@ -1,4 +1,4 @@
-# Shared configuration and helper functions for the Mbongo v0.3
+# Shared configuration and helper functions for the Mbongo v0.4
 # operational devnet (dot-source from the start/stop/status scripts).
 #
 # Defines variables and functions only — no side effects on load.
@@ -7,8 +7,8 @@ Set-StrictMode -Version Latest
 
 # ── Pinned release identity ─────────────────────────────────────────────
 # The devnet runs EXACTLY this tag. start-devnet refuses anything else.
-$DevnetTag = 'v0.3-devnet-stable'
-$DevnetCommit = '751034a121cb26701403cee2796cc3212e7a5365'
+$DevnetTag = 'v0.4-devnet-stable'
+$DevnetCommit = 'fcec8ddc7b06247460e04db987de08232992e2fc'
 
 # ── Paths ───────────────────────────────────────────────────────────────
 # Deployment root lives OUTSIDE the repository. Override with the
@@ -16,7 +16,7 @@ $DevnetCommit = '751034a121cb26701403cee2796cc3212e7a5365'
 if ($env:MBONGO_DEVNET_ROOT) {
     $DevnetRoot = $env:MBONGO_DEVNET_ROOT
 } else {
-    $DevnetRoot = 'C:\mbongo-devnet\v0.3'
+    $DevnetRoot = 'C:\mbongo-devnet\v0.4'
 }
 
 # Repository that provides the tag (the repo containing this script).
@@ -269,7 +269,7 @@ function Assert-DevnetManifest {
     }
     $actual = Get-FileSha256 $BinaryPath
     if ($actual -ne $manifest.sha256) {
-        throw "Binary hash mismatch: manifest=$($manifest.sha256) actual=$actual. The deployed binary is not the recorded v0.3 build; refusing. Rebuild the deployment."
+        throw "Binary hash mismatch: manifest=$($manifest.sha256) actual=$actual. The deployed binary is not the recorded $DevnetTag build; refusing. Rebuild the deployment."
     }
     return $manifest
 }

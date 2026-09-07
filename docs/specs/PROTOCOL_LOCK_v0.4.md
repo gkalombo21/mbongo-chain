@@ -1,7 +1,7 @@
 # PROTOCOL LOCK v0.4 — Compute Task Commitment Devnet Stable
 
 **Status:** FROZEN
-**Git tag:** `v0.4-devnet-stable` — pending; created by the maintainer's release action, see [Release](#release)
+**Git tag:** `v0.4-devnet-stable` @ `fcec8ddc7b06247460e04db987de08232992e2fc` (the release commit; see [Release](#release))
 **Supersedes:** [PROTOCOL_LOCK_v0.3.md](./PROTOCOL_LOCK_v0.3.md)
 **Authorizing RFC:** [RFC 0005 — Compute Task Commitment](../rfcs/0005-compute-task-commitment-v1.md)
 **Locked at:** `26beb2d872cd95de6777d9dd00222b98b7f1f968` (`dev`, 2026-09-07)
@@ -536,11 +536,11 @@ set to Released"):
 | Item | State |
 |---|---|
 | Lock document | this file, FROZEN |
-| Git tag `v0.4-devnet-stable` | **pending** — a release action the maintainer takes on the commit that carries this lock, as `v0.3-devnet-stable` was placed on the v0.3 lock commit; not created by the lock change itself |
-| RFC 0005 status | Accepted (implemented); set to **Released** when the tag exists |
+| Git tag `v0.4-devnet-stable` | **created** on `fcec8ddc7b06247460e04db987de08232992e2fc`, the release commit (RFC 0005 Released, `@mbongo/sdk` 0.2.0); annotated, immutable |
+| RFC 0005 status | **Released** (2026-09-07) |
 | Protocol version constant | none exists in code; the version is the lock and its tag, as at v0.3 |
 | Crate versions | workspace `0.1.0`, unchanged, as at v0.3 |
-| `@mbongo/sdk` release | separate gate, [RELEASE.md](../runbooks/RELEASE.md); not part of the lock |
+| `@mbongo/sdk` release | `0.2.0`, tag `sdk-typescript-v0.2.0` on the same commit, published through the release workflow ([RELEASE.md](../runbooks/RELEASE.md)); the first v0.4-capable SDK |
 | Release notes | the lock, RFC 0005 §13 and this table |
 
 ---

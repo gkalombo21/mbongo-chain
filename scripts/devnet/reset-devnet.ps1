@@ -1,4 +1,4 @@
-# Resets the v0.3 devnet deployment to a fresh-genesis state by wiping
+# Resets the v0.4 devnet deployment to a fresh-genesis state by wiping
 # ONLY deployment-owned runtime data, after an automatic verified
 # backup and two explicit confirmations. Never wipes automatically.
 #

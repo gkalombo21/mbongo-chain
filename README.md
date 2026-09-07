@@ -13,7 +13,7 @@ Mbongo Chain verifies cryptographic receipts from off-chain AI inference. It doe
 
 ## Current Status
 
-**Protocol:** v0.4 (compute task commitment, RFC 0005, on the v0.3 receipt-anchoring base) — tag `v0.4-devnet-stable` pending release
+**Protocol:** v0.4 (compute task commitment, RFC 0005, on the v0.3 receipt-anchoring base) — tag `v0.4-devnet-stable` @ `fcec8ddc`; SDK `@mbongo/sdk` 0.2.0
 
 **Branch:** All development targets `dev`. PRs must target `dev`.
 
