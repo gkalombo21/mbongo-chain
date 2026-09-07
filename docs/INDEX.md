@@ -15,11 +15,13 @@ document disagrees with one of these, this table wins.
 | Subject | Authority | Status |
 |---|---|---|
 | Project vision and scope | [`VISION_v1.md`](VISION_v1.md) | NORMATIVE |
-| Frozen protocol surfaces, versioning | [`specs/PROTOCOL_LOCK_v0.3.md`](specs/PROTOCOL_LOCK_v0.3.md) | NORMATIVE |
-| JSON-RPC contract | [`specs/rpc_v0.3.md`](specs/rpc_v0.3.md) | NORMATIVE (DRAFT — v0.2 plus the `ComputeTask` payload variant; executably covered; freeze follows the independent audit) |
+| Frozen protocol surfaces, versioning | [`specs/PROTOCOL_LOCK_v0.4.md`](specs/PROTOCOL_LOCK_v0.4.md) | NORMATIVE (FROZEN; tag `v0.4-devnet-stable` pending) |
+| Protocol surfaces before RFC 0005 | [`specs/PROTOCOL_LOCK_v0.3.md`](specs/PROTOCOL_LOCK_v0.3.md) | SUPERSEDED (historical record, kept intact) |
+| JSON-RPC contract | [`specs/rpc_v0.3.md`](specs/rpc_v0.3.md) | NORMATIVE (FROZEN — v0.2 plus the `ComputeTask` payload variant; independently audited by the v0.4 lock gate) |
 | JSON-RPC contract before RFC 0005 | [`specs/rpc_v0.2.md`](specs/rpc_v0.2.md) | SUPERSEDED (FROZEN, kept intact) |
 | Receipt v1 structure | [`specs/RECEIPT_SPEC_v0.1.md`](specs/RECEIPT_SPEC_v0.1.md) | NORMATIVE |
 | Receipt anchoring consensus rules | [`rfcs/0002-receipt-anchoring-v0.3.md`](rfcs/0002-receipt-anchoring-v0.3.md) | NORMATIVE (Accepted) |
+| Compute task commitment: envelope, `task_id`, rules (k)–(s), task storage | [`rfcs/0005-compute-task-commitment-v1.md`](rfcs/0005-compute-task-commitment-v1.md) | NORMATIVE (Accepted, implemented; locked by PROTOCOL_LOCK_v0.4) |
 | How protocol changes are proposed and accepted | [`RFC_PROCESS.md`](RFC_PROCESS.md) | NORMATIVE |
 | Which changes need an RFC | [`CONTRIBUTION_TIERS.md`](CONTRIBUTION_TIERS.md) | NORMATIVE |
 | Contribution workflow | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | NORMATIVE |
@@ -374,7 +376,7 @@ authoritative; the authority map above is the only source of that.
 ├── specs/rpc_v0.3.md [L2] [PRIMARY]
 │   └── The JSON-RPC contract the node actually serves: v0.2 plus the
 │       ComputeTask payload variant (RFC 0005). Six methods, no
-│       subscriptions. DRAFT until the independent audit.
+│       subscriptions. FROZEN by the v0.4 lock gate's audit.
 ├── specs/rpc_v0.2.md [L2] [SUPERSEDED]
 │   └── The contract before RFC 0005. FROZEN and kept intact.
 ├── rpc_overview.md [L2] [ASPIRATIONAL]
@@ -503,7 +505,7 @@ describe the running system.
 ```
 1. ../README.md                            what runs today, how to start it
 2. VISION_v1.md                            scope, and what is excluded
-3. specs/PROTOCOL_LOCK_v0.3.md             which surfaces are frozen
+3. specs/PROTOCOL_LOCK_v0.4.md             which surfaces are frozen
 4. specs/rpc_v0.3.md                       the RPC contract
 5. architecture/compute-receipts.md        receipts on chain
 6. ../sdk/typescript/README.md             the shipped SDK

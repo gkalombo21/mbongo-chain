@@ -13,14 +13,16 @@ Mbongo Chain verifies cryptographic receipts from off-chain AI inference. It doe
 
 ## Current Status
 
-**Protocol:** v0.3 (receipt anchoring, RFC 0002) — tag `v0.3-devnet-stable` pending release
+**Protocol:** v0.4 (compute task commitment, RFC 0005, on the v0.3 receipt-anchoring base) — tag `v0.4-devnet-stable` pending release
 
 **Branch:** All development targets `dev`. PRs must target `dev`.
 
-> v0.3 is network-incompatible with v0.2 by design: transaction encoding,
-> storage schema, and P2P protocol strings all changed. v0.3 devnets start
-> from a fresh genesis; see
-> [PROTOCOL_LOCK_v0.3.md](./docs/specs/PROTOCOL_LOCK_v0.3.md) for the
+> v0.4 activates on a clean version boundary: fresh genesis, wiped data
+> directories, storage schema 3, and stricter receipt validity (a receipt
+> must answer a committed `ComputeTask`). It is not a wire-format change to
+> receipts, and the P2P strings are unchanged, so v0.3 and v0.4 nodes must
+> never share a network; see
+> [PROTOCOL_LOCK_v0.4.md](./docs/specs/PROTOCOL_LOCK_v0.4.md) for the
 > migration procedure. This is a devnet release — not mainnet-ready.
 
 ### Implemented Now
@@ -249,7 +251,8 @@ the `ping` method.
 | [ARCHITECTURE_OVERVIEW_FOR_NEW_DEVS.md](./docs/ARCHITECTURE_OVERVIEW_FOR_NEW_DEVS.md) | Layer separation and block flow |
 | [architecture/compute-receipts.md](./docs/architecture/compute-receipts.md) | Receipt anchoring: data model, cryptographic domains, validation, storage |
 | [development/compute-receipts.md](./docs/development/compute-receipts.md) | Building, signing, anchoring and verifying receipts with the SDK |
-| [PROTOCOL_LOCK_v0.3.md](./docs/specs/PROTOCOL_LOCK_v0.3.md) | Current frozen surfaces, migration, versioning rules |
+| [PROTOCOL_LOCK_v0.4.md](./docs/specs/PROTOCOL_LOCK_v0.4.md) | Current frozen surfaces, migration, versioning rules |
+| [PROTOCOL_LOCK_v0.3.md](./docs/specs/PROTOCOL_LOCK_v0.3.md) | Superseded v0.3 lock (historical) |
 | [PROTOCOL_LOCK_v0.2.md](./docs/specs/PROTOCOL_LOCK_v0.2.md) | Superseded v0.2 lock (historical) |
 | [COMPUTE_INTERFACE_v0.1.md](./docs/specs/COMPUTE_INTERFACE_v0.1.md) | Future receipt spec (no implementation in v0.2) |
 | [VISION_v1.md](./docs/VISION_v1.md) | Verification layer scope |
@@ -280,8 +283,9 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 | Version | Milestone | Scope |
 |---------|-----------|-------|
 | **v0.2** | Devnet stable | Multi-node devnet, single producer, block sync. **SUPERSEDED by v0.3.** |
-| **v0.3** | Receipt anchoring devnet | RFC 0002 implemented: typed transaction payloads, `AnchorReceipt` consensus rules, receipts column family, protocol string bump. Network-incompatible with v0.2; fresh genesis. **FROZEN** (see [PROTOCOL_LOCK_v0.3.md](./docs/specs/PROTOCOL_LOCK_v0.3.md)). |
-| **v0.4+** | Compute verification expansion | Receipt RPC activation, challenge mechanism, PoS minimal, SDK. |
+| **v0.3** | Receipt anchoring devnet | RFC 0002 implemented: typed transaction payloads, `AnchorReceipt` consensus rules, receipts column family, protocol string bump. Network-incompatible with v0.2; fresh genesis. **SUPERSEDED by v0.4** (see [PROTOCOL_LOCK_v0.3.md](./docs/specs/PROTOCOL_LOCK_v0.3.md)). |
+| **v0.4** | Compute task commitment devnet | RFC 0005 implemented: `ComputeTask` payload, `task_id`, rules (k)–(s), tasks column family (schema 3), receipts bound to committed tasks, rpc_v0.3, reference worker and conformance suite off-chain. Fresh genesis. **FROZEN** (see [PROTOCOL_LOCK_v0.4.md](./docs/specs/PROTOCOL_LOCK_v0.4.md)). |
+| **v0.5+** | Compute verification expansion | Receipt RPC activation, challenge mechanism, PoS minimal, SDK release. |
 | **v1.0** | Verified inference primitive | Receipt verification live. No on-chain AI execution. |
 | **v2+** | Optional PoUW | On-chain execution as opt-in extension. PoUW, TEE, ZK-ML are **future** — not current. |
 

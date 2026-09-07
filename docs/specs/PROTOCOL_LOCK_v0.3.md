@@ -1,10 +1,10 @@
 # PROTOCOL LOCK v0.3 — Receipt Anchoring Devnet Stable
 
-**Status:** FROZEN
+**Status:** SUPERSEDED by [PROTOCOL_LOCK_v0.4.md](./PROTOCOL_LOCK_v0.4.md) — kept as the historical record of the v0.3 surfaces
 **Git tag:** `v0.3-devnet-stable`
 **Supersedes:** [PROTOCOL_LOCK_v0.2.md](./PROTOCOL_LOCK_v0.2.md)
 **Authorizing RFC:** [RFC 0002 — Receipt Anchoring](../rfcs/0002-receipt-anchoring-v0.3.md)
-**Last updated:** 2026-07-20
+**Last updated:** 2026-07-20 (superseded 2026-09-07)
 
 ---
 

@@ -1,6 +1,6 @@
 # Mbongo Chain RPC Specification v0.3
 
-**Status:** DRAFT — contract complete and executably covered (§5); freeze follows the independent audit, as v0.2 §8 did
+**Status:** FROZEN — the independent audit of §9.1 found no divergence; frozen with [PROTOCOL_LOCK_v0.4.md](./PROTOCOL_LOCK_v0.4.md)
 **Supersedes:** [rpc_v0.2.md](./rpc_v0.2.md) as the description of current node RPC behaviour
 **Authorising protocol change:** [RFC 0005 — Compute Task Commitment](../rfcs/0005-compute-task-commitment-v1.md), Accepted; implemented in Workstreams A and A2 of the Compute vertical epic (#126)
 **Derived from:** executable code and tests at `f6aa3972fe6fbde77a61bdf0bbdb5e2b5f864906` plus the tests this document names in §5
@@ -387,3 +387,38 @@ does not have to rediscover them:
 - Activation implication: a v0.4 node writes storage schema 3 and serves
   blocks that v0.2 typed clients cannot read; clients upgrade with the
   node, per the fresh-genesis activation RFC 0005 §5.3 already requires.
+
+### 9.1 The independent audit, and the freeze
+
+The audit was run by the v0.4 lock gate (Workstream B of #126) at
+`26beb2d872cd95de6777d9dd00222b98b7f1f968`, deriving the contract afresh
+from `crates/mbongo-network/src/server.rs`, the `RpcBackend` trait, the
+serde derivations on `mbongo-core` types, `jsonrpc_tests.rs` and the neutral
+fixture, and comparing that derivation against this text:
+
+- **Method set**: the dispatcher matches exactly `ping`, `get_block_height`,
+  `submit_transaction`, `produce_block`, `get_latest_block_hash`,
+  `get_block_by_height`; every other name is `-32601`. Six methods, none
+  added, none removed — as §2 and §3 state.
+- **Params, results, errors**: unchanged from v0.2 for all six; `-32602`
+  for undecodable params and payloads, `-32603` for backend rejection, as
+  §2.3 and §4.1 state.
+- **Widening**: exactly one — the third payload member,
+  `{"ComputeTask": {…}}`, carrying the six RFC 0005 fields under the v0.2
+  byte-encoding rule (§1, §4.4); no `task_id` on the wire; the union is
+  closed (§4.1). The `Receipt` and `AnchorReceipt` shapes are unchanged
+  (§4.5), and `test-vectors/transaction/anchor-receipt-v1.json` is
+  byte-identical to its v0.3 blob.
+- **Body limit**: `server.rs` sets no explicit limit, so axum's 2 MiB
+  default applies, as §1 records; the maximal task request test holds.
+- **Old clients**: the §7 observations were re-checked against the
+  published `@mbongo/sdk@0.1.0` source tree at `sdk-typescript-v0.1.0`,
+  which has no `ComputeTask` support.
+- **Coverage**: all 19 tests in `jsonrpc_tests.rs` pass, including the six
+  §5 names; the three RFC 0005 fixtures were re-derived independently and
+  are JSON-identical to the committed files.
+
+No divergence between runtime, tests and this text. This document is
+therefore **FROZEN**. Breaking changes — anything that would alter a
+canonical parameter form, a result shape, the payload union or the public
+method set — require a new RPC version.
