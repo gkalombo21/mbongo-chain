@@ -8,11 +8,12 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
-description = "GPU compute execution runtime for Mbongo Chain"
+description = "Reference compute worker, control plane and private data plane for Mbongo Chain"
 
 [dependencies]
 # Internal dependencies
 mbongo-core = { path = "../mbongo-core" }
+mbongo-verification = { path = "../mbongo-verification" }
 
 # Async runtime
 tokio = { workspace = true }
@@ -20,6 +21,11 @@ tokio = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
+parity-scale-codec = { workspace = true }
+
+# Cryptography
+ed25519-dalek = { workspace = true }
+blake3 = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
@@ -27,7 +33,18 @@ anyhow = { workspace = true }
 
 # Logging
 log = { workspace = true }
+env_logger = { workspace = true }
+
+# HTTP client (live chain client for the harness)
+reqwest = { workspace = true }
+
+# Utilities
+hex = { workspace = true }
+
+[[bin]]
+name = "compute_harness"
+path = "src/bin/compute_harness.rs"
 
 [dev-dependencies]
 criterion = { workspace = true }
-env_logger = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
