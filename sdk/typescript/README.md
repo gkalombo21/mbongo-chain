@@ -4,8 +4,18 @@
 
 ## Status
 
-**Published.** `@mbongo/sdk` is on the public npm registry; `0.1.0` is the
-first release.
+**Published.** `@mbongo/sdk` is on the public npm registry. `0.2.0` is the
+first release with `ComputeTask` support — task construction, `task_id`,
+signing and submission, task-bearing block decoding, task-bound receipts and
+executor-authorised anchoring against protocol v0.4 (`rpc_v0.3`). `0.1.0`
+predates all of that: it is an `rpc_v0.2` client that cannot submit a task or
+decode a block that carries one, and it must not be used with a v0.4 node for
+Compute.
+
+What this package does **not** contain: any private-data-plane, control-plane
+or worker API (those are the non-consensus reference implementation in
+`crates/mbongo-compute`), and no GPU, AI, metering, pricing or settlement
+functionality.
 
 **Unstable, pre-1.0.** Breaking changes are allowed until v1.0. The SDK
 carries its own version and does not track the node or protocol version.

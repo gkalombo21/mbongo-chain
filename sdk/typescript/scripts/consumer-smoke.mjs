@@ -56,7 +56,7 @@ import { resolveNpmCli } from "./npm-cli.mjs";
 const PKG_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = path.resolve(PKG_DIR, "..", "..");
 const EXPECTED_NAME = "@mbongo/sdk";
-const EXPECTED_VERSION = "0.1.0";
+const EXPECTED_VERSION = "0.2.0";
 
 const USAGE = `usage: node scripts/consumer-smoke.mjs [--tarball <path>]
 

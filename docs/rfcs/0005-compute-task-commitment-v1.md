@@ -1,8 +1,10 @@
 # RFC 0005 — Compute Task Commitment (Protocol v0.4)
 
-**Status:** Accepted — sole-maintainer
+**Status:** Released — sole-maintainer
 **Governance mode:** SINGLE_MAINTAINER
 **Accepted:** 2026-09-06
+**Implemented:** 2026-09-07 — rules (k)–(p) #129, (q)–(s) #130, rpc_v0.3 #131, SDK #132; reference worker #133, conformance #134, lock #135, devnet vertical #136
+**Released:** 2026-09-07 — [PROTOCOL_LOCK_v0.4.md](../specs/PROTOCOL_LOCK_v0.4.md) (FROZEN); git tag `v0.4-devnet-stable` on the release commit
 **Accepted by:** @gkalombo21 (author)
 **Independent Core Maintainer review:** unavailable — `E(R) = 0` at acceptance
 **Author:** Gilbert Kalombo
