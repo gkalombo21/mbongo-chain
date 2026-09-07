@@ -3,7 +3,7 @@
 **Protocol authority:** [`PROTOCOL_LOCK_v0.4.md`](../specs/PROTOCOL_LOCK_v0.4.md) (FROZEN)
 **RPC authority:** [`rpc_v0.3.md`](../specs/rpc_v0.3.md) (FROZEN)
 **Storage schema:** 3
-**Source:** `dev` at or after `740f0615aa2b4e50a357173afcc57bd54aede8e9`; the `v0.4-devnet-stable` tag is pending (a release action, not performed by this runbook)
+**Source:** the `v0.4-devnet-stable` tag — the release commit that carries this runbook, RFC 0005 at Released, PROTOCOL_LOCK_v0.4 and `@mbongo/sdk` 0.2.0; `dev` at or after it
 **Profile:** LOCAL / DEVNET REFERENCE PROFILE — three native `mbongo-node` processes on one host, or the three-container Docker devnet. **Not a production topology.**
 **Supersedes:** [`DEVNET_V0.3_OPERATIONS.md`](./DEVNET_V0.3_OPERATIONS.md) for everything Compute-related. That runbook's PowerShell deployment stays pinned to `v0.3-devnet-stable` and cannot run v0.4 (see [Known limitations](#known-limitations)).
 
@@ -46,10 +46,12 @@ pull request and every push as the job **Mbongo Compute v0.4 Vertical**.
 - A clean checkout of `dev` at or after the lock commit above.
 - Ports free: harness profile `39944-39946` (RPC), `38080-38082` (REST), `40333-40335` (P2P); Docker profile `127.0.0.1:29944` on the host.
 
-**Do not install `@mbongo/sdk` from npm for this.** The published
-`0.1.0` predates ComputeTask support and cannot submit a task or decode a
-task-bearing block. **PUBLISHED SDK NOT YET V0.4-CAPABLE.** The vertical uses
-the workspace SDK source, built locally:
+**Do not use `@mbongo/sdk` 0.1.0 for this.** It predates ComputeTask support
+and cannot submit a task or decode a task-bearing block. `@mbongo/sdk` 0.2.0
+is the first v0.4-capable release (the `sdk-typescript-v0.2.0` tag; confirm it
+on the registry with `npm view @mbongo/sdk versions` before relying on it).
+The vertical harness always uses the workspace SDK source, built locally, so
+that the proof and the source agree byte for byte:
 
 ```bash
 cd sdk/typescript && npm ci && npm run build && cd ../..
@@ -299,8 +301,8 @@ Operational mitigation in this runbook:
 
 ## Known limitations
 
-- **Published SDK.** `@mbongo/sdk` 0.1.0 is not v0.4-capable; the vertical
-  uses the workspace source. A release is a separate gate (RELEASE.md).
+- **Published SDK.** `@mbongo/sdk` 0.1.0 is not v0.4-capable; 0.2.0 is. The
+  vertical uses the workspace source regardless.
 - **PowerShell persistent devnet is v0.3-pinned.** `devnet-config.ps1` pins
   `v0.3-devnet-stable`; there is no v0.4 tag yet, and the scripts verify the
   tag by exact match. Re-pinning them is a follow-up once

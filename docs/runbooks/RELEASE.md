@@ -26,10 +26,10 @@ re-check the linked documentation before relying on it.
 
 | | |
 |---|---|
-| Package | `@mbongo/sdk`, version `0.1.0`, Apache-2.0, ESM only |
+| Package | `@mbongo/sdk`, version `0.2.0` (source; `0.1.0` is the last published version until the `0.2.0` release run completes), Apache-2.0, ESM only |
 | Registry | none declared; the public npm registry by default |
 | `publishConfig` | `{"access": "public"}` |
-| Git tags | `v0.2-devnet-stable`, `v0.3-devnet-stable` — devnet milestones; `sdk-typescript-v0.1.0` — the SDK release |
+| Git tags | `v0.2-devnet-stable`, `v0.3-devnet-stable`, `v0.4-devnet-stable` — devnet milestones; `sdk-typescript-v0.1.0`, `sdk-typescript-v0.2.0` — the SDK releases |
 | GitHub releases | none |
 | GitHub environments | `npm-production`, one required reviewer |
 | Repository secrets | none |
