@@ -2846,10 +2846,16 @@ name = "mbongo-compute"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "criterion",
+ "ed25519-dalek",
  "env_logger",
+ "hex",
  "log",
  "mbongo-core",
+ "mbongo-verification",
+ "parity-scale-codec",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

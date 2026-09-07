@@ -42,6 +42,13 @@ jobs:
       - name: Run replay harness
         run: cargo run -p mbongo-node --bin replay_harness
 
+      # The reference compute lifecycle against a real node: private input
+      # off-chain, scoped capability, commitment check, deterministic
+      # execution, result persisted before the bound receipt is anchored.
+      # Spawns the node binary the previous steps built.
+      - name: Run reference compute harness
+        run: cargo run -p mbongo-compute --bin compute_harness
+
   # ---------------------------------------------------------
   # Devnet Convergence (run only on push to dev)
   # ---------------------------------------------------------

@@ -29,6 +29,7 @@ document disagrees with one of these, this table wins.
 | How a client, the control plane, the private data plane and a worker hand private inputs and results to one another | [`architecture/compute-private-data-plane-interface.md`](architecture/compute-private-data-plane-interface.md) | NORMATIVE (architecture, non-consensus — RFC 0005 wins on protocol) |
 | What the control plane may and must do between an accepted `ComputeTask` and an anchored receipt; leases, attempts, retry, duplicate handling, receipt relay | [`architecture/compute-control-plane-worker-interface.md`](architecture/compute-control-plane-worker-interface.md) | NORMATIVE (architecture, non-consensus — RFC 0005 wins on protocol) |
 | Building, signing, anchoring, verifying receipts | [`development/compute-receipts.md`](development/compute-receipts.md) | CURRENT |
+| The reference compute worker, control plane and private data plane: what runs, what is public, what is private, crash and retry | [`development/reference-worker.md`](development/reference-worker.md) | CURRENT (implementation of E and F; not protocol authority) |
 | Devnet topology and infrastructure | [`architecture/devnet-infrastructure.md`](architecture/devnet-infrastructure.md) | CURRENT |
 | Running a devnet locally | [`development/devnet.md`](development/devnet.md) | CURRENT |
 | Devnet operations | [`runbooks/DEVNET_V0.3_OPERATIONS.md`](runbooks/DEVNET_V0.3_OPERATIONS.md) | CURRENT |
@@ -337,10 +338,14 @@ authoritative; the authority map above is the only source of that.
 │   └── Wallet, ComputeClient, GovernanceClient and providers that
 │       @mbongo/sdk does not implement. For the shipped package see
 │       ../sdk/typescript/README.md.
-└── development/compute-receipts.md [L2] [PRIMARY]
-    ├── Receipt primitives and anchoring API
-    ├── Nonce, errors and retry semantics
-    └── Testing against the shared fixtures
+├── development/compute-receipts.md [L2] [PRIMARY]
+│   ├── Receipt primitives and anchoring API
+│   ├── Nonce, errors and retry semantics
+│   └── Testing against the shared fixtures
+└── development/reference-worker.md [L2] [PRIMARY]
+    ├── The reference worker, control plane and data plane (crates/mbongo-compute)
+    ├── Lifecycle, identities, grants, trust assumptions
+    └── Crash and retry, logging, the confidential extension point
 ```
 
 ---
