@@ -1,7 +1,7 @@
 # Devnet v0.3 Operations Runbook
 
 **Release:** `v0.3-devnet-stable` @ `751034a121cb26701403cee2796cc3212e7a5365`
-**Superseded for protocol v0.4 and the Compute vertical by [`DEVNET_V0.4_OPERATIONS.md`](./DEVNET_V0.4_OPERATIONS.md).** The scripts this runbook describes are pinned to the v0.3 tag and cannot run a v0.4 node; they remain the authority for that deployment only.
+**HISTORICAL — superseded by [`DEVNET_V0.4_OPERATIONS.md`](./DEVNET_V0.4_OPERATIONS.md).** As of the v0.4 release the scripts under `scripts/devnet/` pin `v0.4-devnet-stable` @ `fcec8ddc`, not the tag above; this document is kept as the record of the v0.3 deployment and its procedures, and its receipt smoke test builds an unbound receipt that v0.4 rejects (rule q).
 **Scope:** persistent single-host three-node devnet (Windows, native processes)
 **Status:** operational Step 1 — start/stop/status only
 

@@ -1,4 +1,4 @@
-# Starts the persistent three-node Mbongo v0.3 devnet (producer + two
+# Starts the persistent three-node Mbongo v0.4 devnet (producer + two
 # followers) from a binary built at exactly the pinned release tag.
 #
 # Refuses to start if: the manifest/tag/commit/binary hash do not match,
@@ -38,7 +38,9 @@ function Initialize-DevnetBuild {
     if ($head -ne $DevnetCommit) {
         throw "Build worktree at $BuildDir is at commit $head, expected $DevnetCommit. Remove the worktree (git -C $RepoRoot worktree remove $BuildDir) and re-run."
     }
-    $desc = (git -C $BuildDir describe --tags --exact-match).Trim()
+    # --match: the release commit may carry more than one tag (the SDK release
+    # tag shares it), and an unqualified describe would report either.
+    $desc = (git -C $BuildDir describe --tags --exact-match --match $DevnetTag).Trim()
     if ($desc -ne $DevnetTag) {
         throw "Build worktree describes as '$desc', expected '$DevnetTag'."
     }
@@ -117,7 +119,7 @@ function Assert-DataProvenance([hashtable]$Node) {
         if (($m.tag -ne $DevnetTag) -or ($m.commit -ne $DevnetCommit)) {
             throw "Data directory $dataDir belongs to deployment '$($m.tag)' ($($m.commit)), not '$DevnetTag' ($DevnetCommit). Refusing to reuse it."
         }
-        Write-Step "$($Node.Name): resuming existing v0.3 data directory"
+        Write-Step "$($Node.Name): resuming existing $DevnetTag data directory"
     } else {
         New-Item -ItemType Directory -Force $dataDir | Out-Null
         [ordered]@{
@@ -183,7 +185,7 @@ function Get-ProducerPeerId([string]$OutLog) {
 }
 
 # ── Main ───────────────────────────────────────────────────────────────
-Write-Step "Mbongo v0.3 devnet start (root: $DevnetRoot)"
+Write-Step "Mbongo v0.4 devnet start (root: $DevnetRoot)"
 
 Initialize-DevnetBuild
 $manifest = Assert-DevnetManifest

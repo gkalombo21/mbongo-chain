@@ -1,4 +1,4 @@
-# Creates a consistent, verified backup of the v0.3 devnet deployment's
+# Creates a consistent, verified backup of the v0.4 devnet deployment's
 # runtime state as a single timestamped ZIP archive plus a metadata
 # sidecar under <DevnetRoot>\backups\.
 #
