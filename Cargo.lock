@@ -2928,6 +2928,7 @@ dependencies = [
  "clap",
  "ed25519-dalek",
  "env_logger",
+ "hex",
  "libp2p",
  "log",
  "mbongo-api",

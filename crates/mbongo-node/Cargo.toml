@@ -39,6 +39,7 @@ async-trait = "0.1"
 
 # Crypto
 blake3 = { workspace = true }
+hex = { workspace = true }
 parity-scale-codec = { workspace = true }
 ed25519-dalek = { workspace = true }
 
@@ -68,6 +69,10 @@ path = "src/bin/replay_harness.rs"
 [[bin]]
 name = "convergence_probe"
 path = "src/bin/convergence_probe.rs"
+
+[[bin]]
+name = "compute_vertical"
+path = "src/bin/compute_vertical.rs"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

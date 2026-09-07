@@ -1,6 +1,7 @@
 # Devnet v0.3 Operations Runbook
 
 **Release:** `v0.3-devnet-stable` @ `751034a121cb26701403cee2796cc3212e7a5365`
+**Superseded for protocol v0.4 and the Compute vertical by [`DEVNET_V0.4_OPERATIONS.md`](./DEVNET_V0.4_OPERATIONS.md).** The scripts this runbook describes are pinned to the v0.3 tag and cannot run a v0.4 node; they remain the authority for that deployment only.
 **Scope:** persistent single-host three-node devnet (Windows, native processes)
 **Status:** operational Step 1 — start/stop/status only
 
