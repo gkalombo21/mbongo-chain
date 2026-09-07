@@ -1,7 +1,7 @@
 # Mbongo Chain — Agent Instructions
 
 A Rust blockchain (`crates/`) with a TypeScript SDK (`sdk/typescript/`).
-Protocol v0.3, frozen. PRs target `dev`; `main` is reserved for audited
+Protocol v0.4, frozen. PRs target `dev`; `main` is reserved for audited
 milestones.
 
 ## Start here
@@ -21,9 +21,10 @@ Do not restate protocol facts from this file or from memory. Look them up:
 
 | Subject | Where |
 |---|---|
-| Frozen surfaces, versioning | [`docs/specs/PROTOCOL_LOCK_v0.3.md`](docs/specs/PROTOCOL_LOCK_v0.3.md) |
-| RPC contract | [`docs/specs/rpc_v0.2.md`](docs/specs/rpc_v0.2.md) |
+| Frozen surfaces, versioning | [`docs/specs/PROTOCOL_LOCK_v0.4.md`](docs/specs/PROTOCOL_LOCK_v0.4.md) |
+| RPC contract | [`docs/specs/rpc_v0.3.md`](docs/specs/rpc_v0.3.md) |
 | Receipts, anchoring | [`docs/specs/RECEIPT_SPEC_v0.1.md`](docs/specs/RECEIPT_SPEC_v0.1.md), [`docs/rfcs/0002-receipt-anchoring-v0.3.md`](docs/rfcs/0002-receipt-anchoring-v0.3.md) |
+| Compute tasks, receipt binding | [`docs/rfcs/0005-compute-task-commitment-v1.md`](docs/rfcs/0005-compute-task-commitment-v1.md) |
 | Changing any of the above | [`docs/RFC_PROCESS.md`](docs/RFC_PROCESS.md), [`docs/CONTRIBUTION_TIERS.md`](docs/CONTRIBUTION_TIERS.md) |
 | Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | **What counts as proof here** | [`docs/ENGINEERING_EVIDENCE.md`](docs/ENGINEERING_EVIDENCE.md) |
