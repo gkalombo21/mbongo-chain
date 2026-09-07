@@ -30,6 +30,7 @@ document disagrees with one of these, this table wins.
 | What the control plane may and must do between an accepted `ComputeTask` and an anchored receipt; leases, attempts, retry, duplicate handling, receipt relay | [`architecture/compute-control-plane-worker-interface.md`](architecture/compute-control-plane-worker-interface.md) | NORMATIVE (architecture, non-consensus — RFC 0005 wins on protocol) |
 | Building, signing, anchoring, verifying receipts | [`development/compute-receipts.md`](development/compute-receipts.md) | CURRENT |
 | The reference compute worker, control plane and private data plane: what runs, what is public, what is private, crash and retry | [`development/reference-worker.md`](development/reference-worker.md) | CURRENT (implementation of E and F; not protocol authority) |
+| What every compute implementation must satisfy — the named conformance suite (`compute-conformance-v1`), its cases, how a future worker or data plane runs it | [`development/compute-conformance.md`](development/compute-conformance.md) | CURRENT (tests the architecture contracts; not protocol authority) |
 | Devnet topology and infrastructure | [`architecture/devnet-infrastructure.md`](architecture/devnet-infrastructure.md) | CURRENT |
 | Running a devnet locally | [`development/devnet.md`](development/devnet.md) | CURRENT |
 | Devnet operations | [`runbooks/DEVNET_V0.3_OPERATIONS.md`](runbooks/DEVNET_V0.3_OPERATIONS.md) | CURRENT |
@@ -342,10 +343,14 @@ authoritative; the authority map above is the only source of that.
 │   ├── Receipt primitives and anchoring API
 │   ├── Nonce, errors and retry semantics
 │   └── Testing against the shared fixtures
-└── development/reference-worker.md [L2] [PRIMARY]
-    ├── The reference worker, control plane and data plane (crates/mbongo-compute)
-    ├── Lifecycle, identities, grants, trust assumptions
-    └── Crash and retry, logging, the confidential extension point
+├── development/reference-worker.md [L2] [PRIMARY]
+│   ├── The reference worker, control plane and data plane (crates/mbongo-compute)
+│   ├── Lifecycle, identities, grants, trust assumptions
+│   └── Crash and retry, logging, the confidential extension point
+└── development/compute-conformance.md [L2] [PRIMARY]
+    ├── Mbongo Compute Conformance: the Subject adapter and the case catalog
+    ├── P4 / P5 / P15 / F19 traceability; what a pass does and does not mean
+    └── Running it for a future CPU, GPU, AI worker or persistent data plane
 ```
 
 ---

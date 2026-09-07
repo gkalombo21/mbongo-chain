@@ -45,6 +45,10 @@ hex = { workspace = true }
 name = "compute_harness"
 path = "src/bin/compute_harness.rs"
 
+[[bin]]
+name = "compute_conformance"
+path = "src/bin/compute_conformance.rs"
+
 [dev-dependencies]
 criterion = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
