@@ -26,7 +26,7 @@ re-check the linked documentation before relying on it.
 
 | | |
 |---|---|
-| Package | `@mbongo/sdk`, version `0.2.0` (source; `0.1.0` is the last published version until the `0.2.0` release run completes), Apache-2.0, ESM only |
+| Package | `@mbongo/sdk`, version `0.2.0`, Apache-2.0, ESM only — **published** (registry `latest` = `0.2.0`, `dist.integrity` equal to the release run's `CANONICAL_TARBALL_SRI`, provenance attestation present) |
 | Registry | none declared; the public npm registry by default |
 | `publishConfig` | `{"access": "public"}` |
 | Git tags | `v0.2-devnet-stable`, `v0.3-devnet-stable`, `v0.4-devnet-stable` — devnet milestones; `sdk-typescript-v0.1.0`, `sdk-typescript-v0.2.0` — the SDK releases |
@@ -384,11 +384,16 @@ This is deliberately not automated away. It means **no long-lived npm
 credential ever needs to exist in this repository**, at any point, including
 the bootstrap.
 
-**Where this stands.** Steps 1 and 2 are done. `0.1.0` was published by hand
-under the bootstrap path, and the trusted publisher is configured. Step 3 is
-**configured but never exercised**: no release has yet published over OIDC, so
-the automated path is ready rather than demonstrated. The first tag that runs
-it will be its first proof.
+**Where this stands.** All three steps are done. `0.1.0` was published by hand
+under the bootstrap path, the trusted publisher was configured, and `0.2.0`
+was published **through the workflow over OIDC** (tag `sdk-typescript-v0.2.0`,
+run `34156693796`): the registry records the publisher as GitHub Actions and
+serves a SLSA v1 provenance attestation whose subject is the packed tarball's
+SHA-512. That run's own verification step reported a failure because it
+queried the registry once, within a second of the publish acknowledgement,
+and the registry's read path had not yet caught up; the publication was real
+and the bytes were the tested ones. Post-publish verification now retries on
+a bounded schedule (§12).
 
 Two consequences follow, and neither is a defect:
 
@@ -481,6 +486,8 @@ So a release is not reversible by re-running it.
 | more or fewer than one tarball | stop; the pack step is defective |
 | OIDC unavailable | stop; do **not** fall back to a token |
 | registry unreachable before the request | stop; retry the whole release is safe, because nothing reached npm |
+| registry answers "no such version" or an incomplete document right after a successful publish | the read path lags the write path by seconds. `scripts/verify-published.mjs` retries the query on a bounded schedule (5, 10, 20, 30, 30 s between attempts, six attempts), retries only on absence, incomplete metadata and transient errors, and stops at once on an integrity mismatch or a document naming another version. It has no publish code path: a delayed answer never becomes a second publish |
+| verification exhausts its schedule (`VERIFY_TIMEOUT`) | the publish outcome is **unknown** — go to §12.1; never re-run the publish on the strength of a timeout |
 | **publish outcome unknown** | **do not retry** — go to §12.1 |
 | publish fails after the registry accepted | treat as published; verify, then §12.2 |
 | GitHub Release step fails after a successful publish | the release is real; create the Release by hand |
