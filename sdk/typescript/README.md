@@ -11,8 +11,12 @@ first release.
 carries its own version and does not track the node or protocol version.
 
 Aligned with
-[`docs/specs/rpc_v0.2.md`](https://github.com/MbongoChain/mbongo-chain/blob/dev/docs/specs/rpc_v0.2.md)
-(**FROZEN**), which describes the RPC surface the node actually serves.
+[`docs/specs/rpc_v0.3.md`](https://github.com/MbongoChain/mbongo-chain/blob/dev/docs/specs/rpc_v0.3.md),
+which describes the RPC surface the node actually serves: the six methods of
+the frozen `rpc_v0.2.md`, with the transaction payload union widened by the
+`ComputeTask` variant of RFC 0005. A client built against `rpc_v0.2.md` still
+sends valid requests, but cannot decode a block that carries a task; this
+version can.
 
 Earlier versions of this package targeted `docs/specs/jsonrpc_v0.1.md`, an
 aspirational `mbg_*` surface the node has never implemented — every call it
@@ -63,7 +67,7 @@ To work on the SDK itself rather than consume it, see
 
 ## Supported methods
 
-All six RPC v0.2 methods, and only those:
+All six RPC v0.3 methods, and only those:
 
 | Client method | RPC method | Params | Result |
 |---|---|---|---|
@@ -88,19 +92,20 @@ block.header.height;                  // 0
 block.body.transactions;              // []
 ```
 
-## Signing: only `AnchorReceipt`
+## Signing: `ComputeTask` and `AnchorReceipt`
 
 `submitTransaction` sends an **already-signed** transaction: the caller
 supplies a complete `Transaction` object and the client serialises it as-is.
 It signs nothing.
 
-The one transaction this package can build and sign for you is
-`AnchorReceipt` — see [Anchoring a receipt](#anchoring-a-receipt). There is
-deliberately no general `signTransaction`: a generic signer would have to
+The two transactions this package can build and sign for you are
+`ComputeTask` — see [Committing a compute task](#committing-a-compute-task) —
+and `AnchorReceipt` — see [Anchoring a receipt](#anchoring-a-receipt). There
+is deliberately no general `signTransaction`: a generic signer would have to
 encode arbitrary `u128` amounts, and this package caps `amount` at `u64::MAX`
 for the read-path reason described under
-[Numeric range](#numeric-range-exact-integers). `AnchorReceipt` sidesteps the
-question entirely, because consensus pins its amount to `0`.
+[Numeric range](#numeric-range-exact-integers). Both supported transactions
+sidestep the question entirely, because consensus pins their amount to `0`.
 
 For any other transaction type the caller still supplies a signed object:
 
@@ -126,7 +131,109 @@ To produce one today, see
 
 There is no compute client and no lookup by `task_id` here. The five reserved
 compute RPC methods and `submit_receipt` / `get_receipt` are **unavailable on
-the node** and return `-32601`; wrapping them would only wrap an error.
+the node** and return `-32601`; wrapping them would only wrap an error. A
+compute task travels through the ordinary `submit_transaction` and is read
+back out of a block with `getBlockByHeight` — see
+[Committing a compute task](#committing-a-compute-task).
+
+## Committing a compute task
+
+A `ComputeTask` commits a question to the chain: who asks (`submitter`), who
+alone may answer (`executor`), a commitment to the input, and an opaque
+specification. The input, the work and the result stay off-chain. Consensus
+rules are RFC 0005; the wire form is `rpc_v0.3` §4.4.
+
+```typescript
+import {
+  computeTaskId,
+  signComputeTaskTransaction,
+  submitComputeTask,
+  computeTasksInBlock,
+  MbongoComputeTaskError,
+} from "@mbongo/sdk";
+
+const task = {
+  version: 1,
+  submitter: submitterPublicKey,      // Uint8Array(32)
+  executor: executorPublicKey,        // Uint8Array(32): the one party allowed to answer
+  salt,                               // Uint8Array(32), your choice; zero is legal
+  inputCommitment,                    // Uint8Array(32), opaque to the chain
+  executionSpec,                      // Uint8Array, at most 1024 bytes, never interpreted
+};
+
+const taskId = computeTaskId(task);                              // Uint8Array(32)
+const tx = signComputeTaskTransaction(task, nonce, submitterSecretKey);
+const txHash = await submitComputeTask(client, tx);
+
+// Later, once the transaction is in a block you know the height of:
+const block = await client.getBlockByHeight(height);
+const committed = computeTasksInBlock(block);                    // ComputeTask[]
+```
+
+| Function | Returns |
+|---|---|
+| `encodeComputeTask(task)` | the canonical SCALE bytes of the six fields |
+| `computeTaskIdPreimage(task)` | the raw 22-byte domain tag followed by those bytes |
+| `computeTaskId(task)` | `BLAKE3` of the preimage, 32 bytes |
+| `computeTaskSigningPayload(task, nonce)` | the bytes that get signed |
+| `signComputeTaskTransaction(task, nonce, secretKey)` | a signed transaction |
+| `computeTaskTransactionHash(tx)` | `BLAKE3` of the full signed encoding |
+| `computeTaskToWire(task)`, `computeTaskTransactionToWire(tx)` | the JSON objects the node expects |
+| `wireComputeTaskToComputeTask(wire)` | the canonical task from its wire form |
+| `submitComputeTask(client, tx)` | the transaction hash the node reports |
+| `computeTasksInBlock(block)` | the tasks committed in a block you already fetched |
+
+### What is fixed, and what you choose
+
+`sender` is the task's `submitter` (rule o), `receiver` is the zero address
+and `amount` is `0` (rule l); consensus requires all three, so none is a
+parameter. The secret key must derive `submitter`, or signing fails rather
+than producing a transaction the node is guaranteed to refuse. **`nonce` is
+the only transaction field you choose**, exactly as for anchoring.
+
+`executor` is chosen by you, before the task is committed, and it is part of
+the task's identity: the same work asked of a different executor is a
+**different task**, and nothing on chain ever reassigns it. Only that
+executor's receipt will be accepted.
+
+### `task_id` is derived, never sent
+
+`task_id = BLAKE3("mbongo:compute-task:v1" || SCALE(task))`, with the 22-byte
+tag prepended raw. It is not a field of the task and does not appear in the
+transaction; a receipt carries it. Changing any field — including `salt`,
+which exists so you can ask the same executor the same thing twice — changes
+it. The transaction nonce does not, so a resubmission after a nonce race is
+the same task.
+
+### Bytes are bytes
+
+`salt`, `inputCommitment` and `executionSpec` cross the wire as arrays of
+numbers and are preserved exactly: nothing is decoded as text, normalised or
+truncated. `executionSpec` above 1024 bytes throws before anything is
+encoded. Whatever you put in `executionSpec` is **public chain data**; the
+chain does not interpret it, and this package does not redact it. Keep
+private material off-chain, behind `inputCommitment`.
+
+`inputCommitment` is opaque 32 bytes. How you derive it — a plain hash of the
+input, or a blinded one — is between you and your executor; the chain only
+compares it for equality with the receipt's. This package provides no input
+hashing helper, on purpose: RFC 0005 defines no application canonicalisation,
+and a helper here would look like one.
+
+### Observing a task
+
+There is no lookup by `task_id`. A committed task is visible in the block
+that carries it, which is how an executor learns it was asked. Record the
+height at submission time, or scan forward with `getBlockByHeight`.
+
+### The receipt that answers it
+
+Since RFC 0005 a receipt is accepted only if it answers a committed task:
+its `taskId` is the task's derived identity, its `inputCommitment` is the
+task's, and its `executor` is the executor the task named — and it must be
+anchored by that executor. See
+[Anchoring a receipt](#anchoring-a-receipt) for `signBoundReceipt`, which
+derives all three from the task so they cannot be supplied wrong.
 
 Offline receipt primitives — encoding, hashing and signature verification —
 **are** included; see [Receipt primitives](#receipt-primitives). So is
@@ -335,32 +442,63 @@ Anchoring puts a signed receipt inside a transaction that is itself signed,
 and submits it through the ordinary `submit_transaction` method. No new RPC is
 involved.
 
+**A receipt must answer a committed task.** Under RFC 0005 rules (q)–(s) the
+node rejects a receipt whose `taskId` is not a committed task's identity,
+whose `inputCommitment` is not that task's, or whose `executor` is not the
+executor that task named. The unbound flow earlier versions of this package
+documented — a receipt with any `taskId` — is no longer accepted by the node.
+
+The executor-side flow, once the task is visible in a block and the work is
+done off-chain:
+
 ```typescript
 import {
+  signBoundReceipt,
   signAnchorReceiptTransaction,
   submitAnchorReceipt,
   MbongoAnchorError,
 } from "@mbongo/sdk";
 
+// task: the ComputeTask you read out of the block with computeTasksInBlock.
+const receipt = signBoundReceipt(
+  task,
+  { outputCommitment, metadata },   // outputCommitment: Uint8Array(32), yours to assert
+  executorSecretKey,                // must derive task.executor
+);
 const tx = signAnchorReceiptTransaction(receipt, nonce, executorSecretKey);
 
 try {
   const txHash = await submitAnchorReceipt(client, tx);
 } catch (err) {
   if (err instanceof MbongoAnchorError) {
-    err.reason;             // "duplicate-task-id", "invalid-nonce", …
+    err.reason;             // "duplicate-task-id", "task-not-registered", "executor-not-authorised", …
     err.isDuplicateTaskId;
   }
 }
 ```
 
+`signBoundReceipt` derives `taskId`, `inputCommitment` and `executor` from
+the task rather than accepting them, so a receipt it builds cannot fail the
+binding rules by construction. It refuses any key that does not derive
+`task.executor` — the submitter's included, when the submitter is not the
+executor. `assertReceiptBoundToTask(receipt, task)` performs the same three
+checks on a receipt built any other way; it throws a
+`MbongoReceiptBindingError` naming the first binding that fails.
+
 | Function | Returns |
 |---|---|
+| `signBoundReceipt(task, { outputCommitment, metadata? }, executorSecretKey)` | a signed receipt bound to the task |
+| `assertReceiptBoundToTask(receipt, task)` | nothing; throws if any binding fails |
 | `anchorReceiptSigningPayload(receipt, nonce)` | the bytes that get signed |
 | `signAnchorReceiptTransaction(receipt, nonce, secretKey)` | a signed transaction |
 | `anchorReceiptTransactionHash(tx)` | `BLAKE3` of the full signed encoding |
 | `anchorReceiptTransactionToWire(tx)` | the JSON object the node expects |
 | `submitAnchorReceipt(client, tx)` | the transaction hash the node reports |
+
+The low-level receipt and anchoring functions are unchanged and still
+describe any receipt: they are the encoding, not the policy. A receipt built
+by hand can be anchored only if it happens to satisfy the binding; the node,
+not this package, is the authority on that.
 
 ### Two signatures, one key
 
@@ -424,7 +562,10 @@ height at submission time if you need to know.
 A returned hash means the node accepted the transaction into its mempool. It
 does not mean the transaction is in a block, that the receipt is anchored, or
 that the computation the receipt describes was performed correctly. The chain
-validates structure, signature and uniqueness — and nothing about the work.
+validates structure, signature, uniqueness and — since RFC 0005 — that the
+receipt answers a committed task from the executor it named. It validates
+nothing about the work: an anchored receipt is a **bound claim** by that
+executor, not a verified result.
 
 Reading anchored receipts back out of a block you already identified is
 [below](#reading-receipts-back).
@@ -445,6 +586,9 @@ const receipts = receiptsInBlock(block);                      // 0 calls
 |---|---|
 | `receiptsInBlock(block)` | the canonical receipts anchored in that block, in transaction order |
 | `wireReceiptToReceipt(wire)` | one wire receipt converted to canonical bytes |
+
+A block may also carry `ComputeTask` transactions; `receiptsInBlock` ignores
+them, and `computeTasksInBlock(block)` reads them the same way.
 
 ### Known height only
 
