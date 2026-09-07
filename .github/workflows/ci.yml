@@ -57,8 +57,53 @@ jobs:
         run: cargo run -p mbongo-compute --bin compute_conformance
 
   # ---------------------------------------------------------
-  # Devnet Convergence (run only on push to dev)
+  # Mbongo Compute v0.4 Vertical (run on PR + push)
   # ---------------------------------------------------------
+  # The operational end-to-end gate of the first Compute vertical on the
+  # frozen v0.4 base (docs/runbooks/DEVNET_V0.4_OPERATIONS.md): a fresh
+  # three-node devnet brought to convergence, the ComputeTask submitted and
+  # read back through the public TypeScript SDK, the reference control
+  # plane, data plane and worker driven through the full flow with the
+  # negative cases, restarts and privacy/log scans. Needs the node binary
+  # and the built workspace SDK; exits non-zero unless it prints
+  # "MBONGO COMPUTE V0.4 VERTICAL: PASS".
+  compute-vertical:
+    name: Mbongo Compute v0.4 Vertical
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: checks
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.94.0
+        uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Cache cargo registry + build
+        uses: Swatinem/rust-cache@v2
+
+      # The SDK part of the vertical runs on the workspace source, never the
+      # published package (0.1.0 predates ComputeTask support).
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Build the workspace SDK
+        working-directory: sdk/typescript
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build the node
+        run: cargo build -p mbongo-node --locked
+
+      - name: Run the Mbongo Compute v0.4 Vertical Harness
+        run: cargo run -p mbongo-node --bin compute_vertical --locked
+
   devnet:
     name: Devnet Convergence Harness
     runs-on: ubuntu-latest

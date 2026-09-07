@@ -20,6 +20,8 @@ cargo run -p mbongo-compute --bin compute_harness
 
 It prints one line per phase and exits 0 on `REFERENCE COMPUTE FLOW: PASS`. CI runs it on every pull request after the replay harness. It never prints private bytes or keys.
 
+The operational vertical — a fresh three-node devnet, the task submitted and the receipt read back through the public SDK, the negative cases, restarts and privacy scans — is the **Mbongo Compute v0.4 Vertical Harness**, `cargo run -p mbongo-node --bin compute_vertical`, described in [`DEVNET_V0.4_OPERATIONS.md`](../runbooks/DEVNET_V0.4_OPERATIONS.md).
+
 The deterministic suite, which drives every fault the contracts name against an in-memory chain double:
 
 ```bash

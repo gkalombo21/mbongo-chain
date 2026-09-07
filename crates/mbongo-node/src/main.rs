@@ -112,6 +112,14 @@ fn resolve_bind_addr(host: &str, port: u16, flag: &str) -> Result<SocketAddr, St
     Ok(SocketAddr::new(ip, port))
 }
 
+/// The protocol lock this binary implements (informational; see the lock).
+const PROTOCOL_AUTHORITY: &str = "PROTOCOL_LOCK_v0.4";
+/// The RPC contract this binary serves (informational).
+const RPC_AUTHORITY: &str = "rpc_v0.3";
+/// The on-disk schema this binary writes (informational; the storage layer
+/// is the authority and stamps it itself).
+const STORAGE_SCHEMA: u32 = 3;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -124,6 +132,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rest_addr = resolve_bind_addr(&args.rest_host, args.rest_port, "--rest-host")?;
 
     println!("Starting Mbongo Chain node...");
+    // Operator version visibility (not a protocol field, not negotiated):
+    // the authority this binary implements. See
+    // docs/specs/PROTOCOL_LOCK_v0.4.md and docs/runbooks/DEVNET_V0.4_OPERATIONS.md.
+    println!("  Protocol: {PROTOCOL_AUTHORITY} ({RPC_AUTHORITY}, storage schema {STORAGE_SCHEMA})");
     println!("  Chain:    {}", args.chain);
     println!("  RPC:      http://{rpc_addr}");
     println!("  REST:     http://{rest_addr}");

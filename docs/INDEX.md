@@ -35,7 +35,8 @@ document disagrees with one of these, this table wins.
 | What every compute implementation must satisfy — the named conformance suite (`compute-conformance-v1`), its cases, how a future worker or data plane runs it | [`development/compute-conformance.md`](development/compute-conformance.md) | CURRENT (tests the architecture contracts; not protocol authority) |
 | Devnet topology and infrastructure | [`architecture/devnet-infrastructure.md`](architecture/devnet-infrastructure.md) | CURRENT |
 | Running a devnet locally | [`development/devnet.md`](development/devnet.md) | CURRENT |
-| Devnet operations | [`runbooks/DEVNET_V0.3_OPERATIONS.md`](runbooks/DEVNET_V0.3_OPERATIONS.md) | CURRENT |
+| Devnet operations for protocol v0.4 and the first Compute vertical: profile, activation and reset, bootstrap, the full flow, restarts, failure runbook | [`runbooks/DEVNET_V0.4_OPERATIONS.md`](runbooks/DEVNET_V0.4_OPERATIONS.md) | CURRENT |
+| Devnet operations, v0.3 PowerShell persistent deployment | [`runbooks/DEVNET_V0.3_OPERATIONS.md`](runbooks/DEVNET_V0.3_OPERATIONS.md) | SUPERSEDED for Compute; still the v0.3-pinned deployment's own runbook |
 | How the SDK is released | [`runbooks/RELEASE.md`](runbooks/RELEASE.md) | NORMATIVE |
 | TypeScript SDK | [`../sdk/typescript/README.md`](../sdk/typescript/README.md) | CURRENT |
 
