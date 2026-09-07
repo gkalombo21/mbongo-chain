@@ -25,8 +25,9 @@ export type Signature = HexString;
 /**
  * Transaction type discriminant, serialised as the variant name.
  *
- * `ComputeTask` and `Stake` exist in the enum but carry no validated
- * semantics in protocol v0.3.
+ * `ComputeTask` commits a task under RFC 0005 and carries a
+ * `{ ComputeTask: … }` payload. `Stake` exists in the enum but carries no
+ * validated semantics.
  */
 export type TransactionType =
   | "Transfer"
@@ -38,11 +39,15 @@ export type TransactionType =
  * Transaction payload.
  *
  * The unit variant serialises as the bare string `"None"`; the receipt
- * variant serialises as `{ "AnchorReceipt": <receipt> }`.
+ * variant serialises as `{ "AnchorReceipt": <receipt> }`; the task variant
+ * as `{ "ComputeTask": <task> }` (`rpc_v0.3` §4.1). The union is closed: any
+ * other object is not a payload this package will decode.
  *
  * The receipt body is {@link WireReceipt}: the exact JSON shape the node's
  * serde produces, pinned by
- * `test-vectors/transaction/anchor-receipt-v1.json`.
+ * `test-vectors/transaction/anchor-receipt-v1.json`. The task body is
+ * {@link WireComputeTask}, pinned by
+ * `test-vectors/rpc/compute-task-rpc-v1.json`.
  */
 
 /**
@@ -72,7 +77,33 @@ export interface WireReceipt {
   signature: Signature;
 }
 
-export type TransactionPayload = "None" | { AnchorReceipt: WireReceipt };
+/**
+ * A compute task as it crosses the wire, inside a `ComputeTask` payload
+ * (`rpc_v0.3` §4.4). Exactly the six fields of RFC 0005 §2.1; `task_id` is
+ * not among them because it is derived, never transported.
+ *
+ * The same mixed byte representation as {@link WireReceipt}, for the same
+ * reason: `submitter` and `executor` are `Address` on the Rust side and
+ * serialise as hex; `salt`, `input_commitment` and `execution_spec` are plain
+ * byte arrays and serialise as arrays of numbers. `execution_spec` is opaque:
+ * the node never interprets it, and neither does this package.
+ */
+export interface WireComputeTask {
+  version: number;
+  submitter: Address;
+  executor: Address;
+  /** Array of 32 byte values, not hex. */
+  salt: number[];
+  /** Array of 32 byte values, not hex. Opaque; its derivation is not the chain's business. */
+  input_commitment: number[];
+  /** Array of 0..=1024 byte values, not hex. Exact bytes; never text. */
+  execution_spec: number[];
+}
+
+export type TransactionPayload =
+  | "None"
+  | { AnchorReceipt: WireReceipt }
+  | { ComputeTask: WireComputeTask };
 
 /**
  * A transaction as this package returns it.

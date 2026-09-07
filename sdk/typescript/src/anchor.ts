@@ -291,6 +291,10 @@ function classify(message: string): AnchorRejection {
   const m = message.toLowerCase();
   if (m.includes("already anchored")) return "duplicate-task-id";
   if (m.includes("already pending")) return "task-id-pending";
+  // RFC 0005 rules (q)–(s): the receipt must answer a committed task.
+  if (m.includes("not a registered task")) return "task-not-registered";
+  if (m.includes("input_commitment does not match")) return "input-commitment-mismatch";
+  if (m.includes("not authorised by the task")) return "executor-not-authorised";
   if (m.includes("metadata too large")) return "metadata-too-large";
   if (m.includes("unsupported receipt version")) return "unsupported-receipt-version";
   if (m.includes("sender must equal receipt executor")) return "sender-executor-mismatch";

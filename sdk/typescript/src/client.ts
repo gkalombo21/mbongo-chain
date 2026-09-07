@@ -1,10 +1,12 @@
 /**
  * Baseline JSON-RPC client for the Mbongo Chain node.
  *
- * Covers exactly the six methods specified by `docs/specs/rpc_v0.2.md`
- * (FROZEN). Nothing else is exposed: reserved compute methods are
- * unavailable on the node and are not wrapped here, and no receipt or
- * signing helpers exist in this package.
+ * Covers exactly the six methods specified by `docs/specs/rpc_v0.3.md`,
+ * which are the six of the frozen `rpc_v0.2.md` with the transaction payload
+ * union widened by one variant. Nothing else is exposed: reserved compute
+ * methods are unavailable on the node and are not wrapped here. Receipt,
+ * anchoring and compute-task helpers live in their own modules and compose
+ * this client.
  *
  * ## Exact integers
  *
@@ -32,6 +34,7 @@ import type {
   Transaction,
   TransactionInput,
   TransactionPayload,
+  WireComputeTask,
   WireReceipt,
 } from "./types.js";
 
@@ -173,11 +176,34 @@ function normalizeReceipt(path: string, value: unknown): WireReceipt {
   };
 }
 
+function normalizeComputeTask(path: string, value: unknown): WireComputeTask {
+  const t = expectObject(path, value);
+  return {
+    version: expectBoundedNumber(`${path}.version`, t.version, 255n),
+    submitter: expectString(`${path}.submitter`, t.submitter),
+    executor: expectString(`${path}.executor`, t.executor),
+    salt: expectByteArray(`${path}.salt`, t.salt),
+    input_commitment: expectByteArray(`${path}.input_commitment`, t.input_commitment),
+    execution_spec: expectByteArray(`${path}.execution_spec`, t.execution_spec),
+  };
+}
+
+/**
+ * The payload union is closed (`rpc_v0.3` §4.1): `"None"`, `AnchorReceipt`
+ * and `ComputeTask`. Anything else fails here rather than being carried as
+ * an opaque object — a caller reading a block must not silently receive a
+ * payload this package cannot describe.
+ */
 function normalizePayload(path: string, value: unknown): TransactionPayload {
   if (value === "None") return "None";
   const p = expectObject(path, value);
-  if (!("AnchorReceipt" in p)) fail(path, `is not a known payload variant`);
-  return { AnchorReceipt: normalizeReceipt(`${path}.AnchorReceipt`, p.AnchorReceipt) };
+  if ("AnchorReceipt" in p) {
+    return { AnchorReceipt: normalizeReceipt(`${path}.AnchorReceipt`, p.AnchorReceipt) };
+  }
+  if ("ComputeTask" in p) {
+    return { ComputeTask: normalizeComputeTask(`${path}.ComputeTask`, p.ComputeTask) };
+  }
+  fail(path, `is not a known payload variant`);
 }
 
 function normalizeTransaction(path: string, value: unknown): Transaction {

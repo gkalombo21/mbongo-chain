@@ -5,3 +5,4 @@ export * from "./numeric.js";
 export * from "./receipt.js";
 export * from "./anchor.js";
 export * from "./retrieval.js";
+export * from "./compute-task.js";
